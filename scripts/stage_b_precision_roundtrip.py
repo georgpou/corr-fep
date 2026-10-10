@@ -60,6 +60,7 @@ def write_mdp():
     overrides = {
         "integrator": "md", "nsteps": str(NUM_STEPS), "dt": str(DT_PS),
         "gen-vel": "yes", "gen-temp": "298", "gen-seed": "1729",
+        "continuation": "no",
         "pcoupl": "no", "tcoupl": "v-rescale",
         "nstxout": str(WRITE_STEPS), "nstvout": "0", "nstfout": "0",
         "nstxout-compressed": str(WRITE_STEPS),
@@ -72,7 +73,7 @@ def write_mdp():
         match = re.match(r"^\s*([A-Za-z0-9_-]+)\s*=", line)
         if match:
             key = match.group(1).lower()
-            if key == "nstxtcout":  # legacy name; avoid a duplicate compressed output key
+            if key in ("nstxtcout", "unconstrained-start"):  # legacy XTC and continuation names
                 continue
             if key in overrides:
                 if key in seen:
