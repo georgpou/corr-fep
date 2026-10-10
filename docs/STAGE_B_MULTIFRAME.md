@@ -125,6 +125,13 @@ all four production samples.
   RMS 0.00010984 Å, max 0.01000404 Å. The median common translation was
   only ~0.00000954 Å per component. Full box-length difference
   0.0000191 Å. Translation was **not** applied to energy inputs.
+- Following review, the **automated coordinate correspondence gate** uses
+  post-registration RMS <= 0.001 Å, max per-atom displacement <= 0.02 Å,
+  ligand pair-distance discrepancy <= 0.001 Å, and nearest-environment-to-ligand
+  maximum discrepancy <= 0.02 Å (cell component tolerance 0.01).
+  The 0.02 Å maximum allows up to ~two 0.01 Å compressed-coordinate ticks.
+  These are feasibility/audit thresholds, **not** an assertion that permitted
+  rounding has negligible energy or free-energy impact. That requires B2.2.
 - 46-ligand-atom periodic pairwise distance maximum discrepancy
   0.00000502 Å; nearest-ligand distance RMS discrepancy across
   environment atoms 0.00006086 Å, max 0.00546 Å. The GRO title is
