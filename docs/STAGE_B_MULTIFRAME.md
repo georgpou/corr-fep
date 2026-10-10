@@ -44,7 +44,9 @@ trajectory-native atom-identity check.
 3. Read the original XTC through MDAnalysis, apply
    `unwrap(ligand) -> center_in_box(ligand) -> wrap(environment)` per frame,
    and retain the actual frame-dependent periodic box.
-4. Check terminal XTC/GRO **coordinate alignment** after periodic transformations;
+4. Register the same transformations on both GRO and XTC **before** checking
+   terminal coordinate alignment (the previous ordering compared a processed
+   GRO with an unprocessed XTC);
    select four uniformly spaced frames from the deposited **production window
    401–2400**, omitting the first 2 ns equilibration interval. The sample
    remains deliberately **not** claimed statistically independent.
@@ -104,13 +106,89 @@ The workflow stores live results as GitHub Actions artifacts; scientific
 acceptance must be based on the actual run output (including any failures),
 not on the existence of code or a green unrelated CI job.
 
-## High-priority special-case discrepancy
+## Recovered B2.1 scientific checkpoint — 2026-10-10
 
-Track [issue #9](https://github.com/georgpou/corr-fep/issues/9) independently:
-the 12 ns terminal XTC frame versus the archived B1 `eqout.gro` differs
-by approximately **−1.01205 kJ/mol in full-system MM** and **−1.01180 kJ/mol
-in total QM/MM**. This does **not** by itself establish incorrect mechanics.
-The new terminal-coordinate alignment diagnostic is a first step; quantitative
-explanation of the energy difference and consistent matching to the deposited
-`ener.xvg` remain explicit high-priority B2.2 tasks. Do not mark issue #9
-resolved merely because the B2.1 smoke test passes.
+The corrected dedicated Actions job **passed** at
+[run 38087599814](https://github.com/georgpou/corr-fep/actions/runs/38087599814)
+(commit `8f2343d`, [artifact 11683300215](https://github.com/georgpou/corr-fep/actions/runs/38087599814/artifacts/11683300215)).
+The focused endpoint-outlier repeat likewise **passed** at
+[run 38088018062](https://github.com/georgpou/corr-fep/actions/runs/38088018062)
+(commit `c6f2492`, [artifact 11682861447](https://github.com/georgpou/corr-fep/actions/runs/38088018062/artifacts/11682861447)).
+Both artifacts were inspected; their `multiframe.json` files record
+`validated: true`, and each contains finite full-system gradients for
+all four production samples.
+
+- Sampled XTC indices 401 / 1067 / 1733 / 2400 at 2005 / 5335 /
+  8665 / 12000 ps; original 0--400 interval excluded.
+- Correctly transformed terminal XTC versus GRO: minimum-image RMS
+  0.00011077 Å, max 0.01001359 Å; after robust translation registration
+  RMS 0.00010984 Å, max 0.01000404 Å. The median common translation was
+  only ~0.00000954 Å per component. Full box-length difference
+  0.0000191 Å. Translation was **not** applied to energy inputs.
+- Following review, the **automated coordinate correspondence gate** uses
+  post-registration RMS <= 0.001 Å, max per-atom displacement <= 0.02 Å,
+  ligand pair-distance discrepancy <= 0.001 Å, and nearest-environment-to-ligand
+  maximum discrepancy <= 0.02 Å (cell component tolerance 0.01).
+  The 0.02 Å maximum allows up to ~two 0.01 Å compressed-coordinate ticks.
+  These are feasibility/audit thresholds, **not** an assertion that permitted
+  rounding has negligible energy or free-energy impact. That requires B2.2.
+- 46-ligand-atom periodic pairwise distance maximum discrepancy
+  0.00000502 Å; nearest-ligand distance RMS discrepancy across
+  environment atoms 0.00006086 Å, max 0.00546 Å. The GRO title is
+  `Ligand in water`, **with no explicit recorded time**; XTC endpoint
+  is 12000 ps. The exceptional close structural match supports, but does
+  not prove from the GRO timestamp, same-step correspondence.
+- Full-Hamiltonian central differences on frame 401: ligand atom 0,
+  y axis error 0.024428 kJ mol^-1 Å^-1; environment atom 7618,
+  y axis error 0.003195 kJ mol^-1 Å^-1, both well below the
+  predeclared B1 tolerance 0.8. Environmental QM/MM gradient equals
+  full-MM gradient exactly to recorded numerical precision. All four
+  quantum direct-versus-wrapper gradient errors are below
+  1.70e-8 kJ mol^-1 Å^-1.
+
+**Interpretation:** B2.1 now establishes real multiframe evaluation and
+two production-frame derivative probes for the published subtractive
+Hamiltonian. It does not establish statistically independent samples,
+training stability, free-energy accuracy, or reproduction of 25 repeats.
+
+## High-priority special-case discrepancy — quantified, still tracked
+
+[Issue #9](https://github.com/georgpou/corr-fep/issues/9) is separate
+from B2.1 acceptance. Under the **same generated TPRs and runtime**, the
+terminal XTC minus GRO MM-full energy remains **−1.01205337 kJ/mol**
+and QM/MM combined energy **−1.01180347 kJ/mol**. This is not a
+difference between the two former workflow environments.
+
+The endpoint coordinate audit pinpoints exactly **one** atom above
+0.001 Å residual: **zero-based atom 463, water oxygen OW in SOL resid
+141**. Its XTC-minus-GRO minimum-image displacement is
+[+0.00000763, **+0.01001358**, +0.00001144] Å; all remaining atoms'
+post-registration displacements are below ~0.000033 Å. At the XTC
+endpoint its y derivative is −99.414 kJ mol^-1 Å^-1, giving
+`gradient · (XTC - GRO)` ~−0.995 kJ/mol for this atom.
+
+A **diagnostic-only** hybrid XTC configuration with atom 463 reset to
+its GRO position (no other coordinate, force field, or quantum parameter
+changed) changes MM-full energy by **+1.06320969 kJ/mol**, leaving
+a hybrid-minus-GRO difference **+0.05115632 kJ/mol**. The ligand-only
+MM and isolated quantum components remain unchanged by the
+environmental-atom substitution. Thus the single 0.01 Å water-oxygen
+difference is causally responsible for the overwhelming majority of the
+apparent ~1 kJ/mol offset. The precise file-encoding/rounding mechanism
+for that one coordinate and the remaining ~0.051 kJ/mol energy difference
+are not yet independently decomposed.
+
+No per-frame offset is applied to real QM/MM energies. The hybrid is
+**not** an archived molecular configuration and must never be used as
+training data. Issue #9 remains open until the next focused B2.2 task
+matches published `ener.xvg` definitions and frame times and evaluates
+how precision-related differences vary across configurations; a single
+terminal snapshot cannot establish a constant reweighting offset.
+
+## Execution record and provenance
+
+The two scientific artifacts contain `multiframe.json`,
+`gradients.npz`, archived-source hashes, generated TPR hashes, GROMACS
+double-precision version, installed package versions, compiled parameter
+audits and full experiment logs. The dedicated workflow rather than
+generic CI determines scientific acceptance.
