@@ -1,6 +1,6 @@
 # Stage B2.2 — FF reference-energy alignment
 
-**Status: all three numerical B2.2 checks completed; latest source revisions and evidence-preservation changes require fresh workflow validation.**
+**Status: all three B2.2 scientific workflows passed after the five review fixes. Reference audit run [38093520529](https://github.com/georgpou/corr-fep/actions/runs/38093520529); native TRR/XTC roundtrip run [38093517750](https://github.com/georgpou/corr-fep/actions/runs/38093517750); original EDR decomposition run [38093515562](https://github.com/georgpou/corr-fep/actions/runs/38093515562).**
 
 ## Objective
 Check the deposited repeat-0 `ener.xvg` potential definition and exact time alignment with selected XTC frames. Compare its numeric Potential values (kJ/mol) with the original archived dynamics TPR and the rebuilt GROMACS full-MM single-point TPR on identical coordinates.
@@ -34,7 +34,7 @@ The script `scripts/stage_b_precision_roundtrip.py` and workflow `.github/workfl
 
 This is a **mechanistic test on newly generated frames**, NOT restoration of the original full-precision TRR or a substitute for the original dataset. An exact numerical match between a new compressed-minus-uncompressed bias and the observed original residual would support compression as the dominant cause; matching only scale does not uniquely establish causation. No fitting, offset, flow training, or free-energy inference is permitted.
 
-**Status: completed successfully** in [run 38092197810](https://github.com/georgpou/corr-fep/actions/runs/38092197810) ([artifact 11684014638](https://github.com/georgpou/corr-fep/actions/runs/38092197810/artifacts/11684014638)). The 11-frame all-time mean includes the initial t=0 frame (only +0.2925 kJ/mol), whereas the **10 noninitial frames** give a **+263.338 kJ/mol** mean, with bond +231.793 and angle +38.019 kJ/mol. The JSON and CSV now explicitly distinguish these two summary populations. Keep issue #9 open.
+**Status: completed successfully** in [run 38092197810](https://github.com/georgpou/corr-fep/actions/runs/38092197810) ([artifact 11684014638](https://github.com/georgpou/corr-fep/actions/runs/38092197810/artifacts/11684014638)). That historical control run's 11-frame mean includes the initial t=0 frame (only +0.2925 kJ/mol), whereas the **10 noninitial frames** gave **+263.338 kJ/mol**, with bond +231.793 and angle +38.019 kJ/mol. The current review-fixed [rerun 38093517750](https://github.com/georgpou/corr-fep/actions/runs/38093517750) gave **+281.093 kJ/mol for its 10 noninitial frames** and **+255.565 kJ/mol across all 11 frames**. These are two distinct newly generated test trajectories; the starting MD procedure contains stochastic dynamics and must not be assumed to regenerate identical frames. Each JSON/CSV now explicitly distinguishes the two summary populations. Neither value is a prediction of original-frame compression error. Keep issue #9 open.
 
 
 ## B2.2c completed: original deposited EDR decomposition (2026-10-11)
@@ -71,3 +71,11 @@ No flow training or free-energy results are asserted here. Keep scientific issue
 ## PR #11 independent review corrections
 
 After review, the method now preserves separately named rebuilt and archived GROMACS EDR files and the exact G96 inputs for each frame, with SHA-256 hashes and artifact inclusion. All three workflow push path filters include the scientific helper modules so changes to coordinate or energy evaluation code trigger reevaluation. The paired TRR/XTC precision result reports 11-frame and noninitial 10-frame statistics separately. The original EDR component summation is named **reported-term bookkeeping** rather than shared-term equality because 2021.6 and 2023.3 give different improper-dihedral labels. Documentation links above reference successful experimental runs, not historical setup failures. Latest rerun status must be checked on GitHub; these corrections do not retroactively validate new commits.
+
+### Post-review verification
+
+- [Reference audit rerun 38093520529](https://github.com/georgpou/corr-fep/actions/runs/38093520529): success with preserved frame-specific TFEP/rebuilt and archived EDR evidence.
+- [Precision roundtrip rerun 38093517750](https://github.com/georgpou/corr-fep/actions/runs/38093517750): success; JSON/CSV both include and explicitly flag t=0, and expose the ten noninitial summary frames. The new short NVT realization has mean +281.093 kJ/mol (t>0); the prior realization was +263.338 kJ/mol (t>0). Variation is expected from distinct short control trajectories; these are mechanism tests, not replicates for a precision-bias estimator.
+- [Original deposited EDR decomposition rerun 38093515562](https://github.com/georgpou/corr-fep/actions/runs/38093515562): success; [artifact 11684956749](https://github.com/georgpou/corr-fep/actions/runs/38093515562/artifacts/11684956749) holds the original EDR, deposited XVG, four separate G96 inputs, and four pairs of archived-versus-rebuilt raw EDR files. Its `sum_reported_term_differences_kj_mol` closes to 2.59e-11 kJ/mol, but does not imply cross-version equivalence of all named energy terms.
+
+All three workflows now list imported shared scientific scripts in their push filters, so changes to those modules trigger a fresh evaluation instead of silently accepting historical results. No new assertions of free-energy accuracy are made; PR #11 requires explicit user approval before merge.
