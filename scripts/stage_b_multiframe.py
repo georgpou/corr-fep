@@ -172,7 +172,7 @@ def check_terminal_alignment(universe, reference_xyz, ligand_indices, reference_
     env_xtc = distance_array(
         terminal[environment_indices], ligand_xtc, box=box).min(axis=1)
 
-    gro_time = re.search(r"\\bt\\s*=\\s*([-+]?\\d+(?:\\.\\d+)?)", gro_title)
+    gro_time = re.search(r"\bt\s*=\s*([-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?)", gro_title)
     results = {
         "comparison": "same archive TPR atom order, GRO and XTC independently loaded; each transformed using unwrap(ligand), center_in_box(ligand), wrap(environment)",
         "gro_title": gro_title,
