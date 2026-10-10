@@ -11,7 +11,7 @@ from pathlib import Path
 import numpy as np
 from remotezip import RemoteZip
 
-from inspect_zenodo_archive import ARCHIVE_URL, require_range_support
+from inspect_zenodo_archive import ARCHIVE_URL, make_session, require_range_support
 
 LIGAND = "p38a_2g"
 CONFIG = "map00-cond35"
@@ -81,7 +81,6 @@ def numeric_result(archive, phase, tensor_arrays):
 def main():
     output_dir = Path("archive-metadata")
     output_dir.mkdir(exist_ok=True)
-    require_range_support(ARCHIVE_URL)
     result = {
         "dataset_doi": "10.5281/zenodo.21919704",
         "ligand": LIGAND,
@@ -89,32 +88,34 @@ def main():
         "kT_kj_mol": KT_KJ_PER_MOL,
         "phases": {},
     }
-    with RemoteZip(ARCHIVE_URL, initial_buffer_size=512 * 1024, timeout=120) as archive:
-        names = archive.namelist()
-        root = f"lig_{LIGAND}/"
-        result["input_candidates"] = [
-            {"name": n, "compressed_bytes": archive.getinfo(n).compress_size}
-            for n in names if n.startswith(root) and n.endswith(
-                (".xtc", ".trr", ".edr", ".xvg", ".tpr", ".top", ".gro"))
-        ]
-        for phase in ("water", "protein"):
-            subdir = f"{root}tfep-mixedmaf/{CONFIG}/{phase}/tfep_logs/"
-            analysis_name = subdir + "analysis.json"
-            npz_name = subdir + "train/epoch-0.npz"
-            published = json.loads(archive.read(analysis_name))
-            with np.load(io.BytesIO(archive.read(npz_name)), allow_pickle=False) as arrays:
-                tensors = {key: arrays[key] for key in arrays.files}
-            phase_result = {
-                "archive_analysis": published,
-                "train_tensor_shapes": {
-                    k: list(v.shape) for k, v in tensors.items()
-                },
-                "independent_recalculation": numeric_result(archive, phase, tensors),
-            }
-            result["phases"][phase] = phase_result
-            print(phase, "published df:", published.get("df", {}).get("true"))
-            print(phase, "archive tensor shapes:", phase_result["train_tensor_shapes"])
-            print(phase, "recalculation:", phase_result["independent_recalculation"])
+    with make_session() as session:
+        require_range_support(ARCHIVE_URL, session=session)
+        with RemoteZip(ARCHIVE_URL, session=session, initial_buffer_size=512 * 1024, timeout=120) as archive:
+            names = archive.namelist()
+            root = f"lig_{LIGAND}/"
+            result["input_candidates"] = [
+                {"name": n, "compressed_bytes": archive.getinfo(n).compress_size}
+                for n in names if n.startswith(root) and n.endswith(
+                    (".xtc", ".trr", ".edr", ".xvg", ".tpr", ".top", ".gro"))
+            ]
+            for phase in ("water", "protein"):
+                subdir = f"{root}tfep-mixedmaf/{CONFIG}/{phase}/tfep_logs/"
+                analysis_name = subdir + "analysis.json"
+                npz_name = subdir + "train/epoch-0.npz"
+                published = json.loads(archive.read(analysis_name))
+                with np.load(io.BytesIO(archive.read(npz_name)), allow_pickle=False) as arrays:
+                    tensors = {key: arrays[key] for key in arrays.files}
+                phase_result = {
+                    "archive_analysis": published,
+                    "train_tensor_shapes": {
+                        k: list(v.shape) for k, v in tensors.items()
+                    },
+                    "independent_recalculation": numeric_result(archive, phase, tensors),
+                }
+                result["phases"][phase] = phase_result
+                print(phase, "published df:", published.get("df", {}).get("true"))
+                print(phase, "archive tensor shapes:", phase_result["train_tensor_shapes"])
+                print(phase, "recalculation:", phase_result["independent_recalculation"])
 
     dest = output_dir / "p38a_2g-map00-cond35.json"
     dest.write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
