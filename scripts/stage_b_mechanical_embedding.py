@@ -222,19 +222,25 @@ class MechanicalEmbedding(torch.nn.Module):
         for label in ("rerun-full", "rerun-ligand"):
             (ROOT / label).mkdir(exist_ok=True)
 
-    def components(self, flat):
-        if flat.ndim != 2 or flat.shape[0] != 1:
+    def components(self, flat, batch_cell=None):
+        if flat.ndim != 2 or flat.shape[0] != 1 or flat.shape[1] % 3:
             raise ValueError("Expected a batch of one flattened full-system coordinate")
+        if flat.shape[1] < 3 * (self.idx.max().item() + 1):
+            raise ValueError("Full tensor does not contain all ligand indices")
         ligand_flat = flat.reshape(1, -1, 3)[:, self.idx, :].reshape(1, -1)
-        box = self.box.to(flat)
+        box = self.box.to(flat) if batch_cell is None else batch_cell
+        if box.shape != (1, 6) or not torch.isfinite(box).all():
+            raise ValueError("Invalid batch cell: expected finite (1, 6) in angstrom/degrees")
+        if not torch.all(box[:, :3] > 0):
+            raise ValueError("Nonpositive periodic cell length")
         large_box = box.clone()
         large_box[:, :3] *= 1000.
         return (self.mm_full(flat, box),
                 self.mm_lig(ligand_flat, large_box),
                 self.qm(ligand_flat))
 
-    def forward(self, flat):
-        full, lig, qm = self.components(flat)
+    def forward(self, flat, batch_cell=None):
+        full, lig, qm = self.components(flat, batch_cell)
         return full - lig + qm
 
 
@@ -313,6 +319,20 @@ def main():
     env_error = float(np.max(np.abs(grad[env_idx] - full_grad[env_idx])))
     if env_error > 1e-7:
         raise AssertionError("QM/MM environmental gradient differs from full MM")
+    # Verify the exact (flattened coordinates, periodic cell) module signature
+    # used by TFEPMap, not only gradients assembled by hand.
+    x_tfep = torch.tensor(xyz.reshape(1, -1), dtype=torch.float64,
+                          requires_grad=True)
+    box_tfep = torch.tensor(box.reshape(1, 6), dtype=torch.float64)
+    total_tfep = model(x_tfep, box_tfep)
+    if total_tfep.shape != (1,):
+        raise AssertionError(f"Wrong target tensor shape: {tuple(total_tfep.shape)}")
+    total_tfep.sum().backward()
+    interface_e_error = abs(float(total_tfep.detach().item()) - energy)
+    interface_g_error = float(np.max(np.abs(x_tfep.grad.detach().numpy().reshape(-1, 3) - grad)))
+    if interface_e_error > 0.05 or interface_g_error > 0.05:
+        raise AssertionError(f"TFEP-style QM/MM autograd mismatch: "
+                             f"energy={interface_e_error}, gradient={interface_g_error}")
     stage = dict(energies_kj_mol={
         "mm_full":e[0], "mm_ligand":e[1],
         "qm_ligand_gfn1xtb":e[2], "qmmm_combined":energy},
@@ -320,6 +340,10 @@ def main():
         quantum_energy_error_kj_mol=qm_energy_error,
         quantum_gradient_max_error_kj_mol_angstrom=float(qm_grad_error),
         environment_gradient_identity_error_kj_mol_angstrom=env_error,
+        tfep_interface={"positions_shape": [1, int(xyz.size)],
+                        "cell_shape": [1, 6], "energy_shape": [1],
+                        "energy_discrepancy_kj_mol": interface_e_error,
+                        "gradient_max_discrepancy_kj_mol_angstrom": interface_g_error},
         finite_difference_checks=[], provenance=provenance)
     save_json("components.json", stage)
     print("Energy components:", json.dumps(stage["energies_kj_mol"]), flush=True)
