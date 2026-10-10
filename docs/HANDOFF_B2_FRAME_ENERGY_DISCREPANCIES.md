@@ -1,5 +1,15 @@
 # Corr-FEP — Agent handoff: Stage B2 frame alignment and energy discrepancies
 
+> **Historical handoff (initial state, 2026-10-10).** This file records the
+> original failure and instructions given to the successor. The successor
+> recovered B2.1 in [scientific run 38088018062](https://github.com/georgpou/corr-fep/actions/runs/38088018062),
+> traced the dominant ~1 kJ/mol energy difference to one water-oxygen
+> coordinate, and documented numerical evidence in
+> [STAGE_B_MULTIFRAME.md](STAGE_B_MULTIFRAME.md). For the **current**
+> checkpoint status, follow that document and [issue #9](https://github.com/georgpou/corr-fep/issues/9).
+> The old action items below are retained as historical context, not as
+> assertions that B2.1 is still failing.
+
 **Date:** 2026-10-10  
 **Repository:** https://github.com/georgpou/corr-fep  
 **Main after PR #8 squash merge:** `5360db791671d47195408c9d3a77397dfedd6c4f`  
