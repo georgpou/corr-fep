@@ -258,11 +258,33 @@ def main():
         }), flush=True)
     errors = [x["terms_kj_mol"]["Potential"]["xtc_minus_trr"]
               for x in report["frames"]]
+    # t=0 starts from the prepared GRO and is not comparable to post-integration
+    # outputs for a quantization-bias summary. Keep it in the raw table.
+    if abs(report["frames"][0]["time_ps"]) > 0.00005:
+        raise AssertionError("Control roundtrip first frame must be t=0")
+    noninitial = report["frames"][1:]
+    if not noninitial:
+        raise AssertionError("No postinitial snapshots for precision analysis")
+    postinitial_errors = [
+        f["terms_kj_mol"]["Potential"]["xtc_minus_trr"] for f in noninitial
+    ]
     trr_err = [x["terms_kj_mol"]["Potential"]["trr_minus_md"]
                for x in report["frames"]]
     report["summary"] = {
         "num_paired_frames": len(errors),
         "xtc_minus_trr_mean_kj_mol": float(np.mean(errors)),
+        "all_frame_mean_includes_t0": True,
+        "noninitial_frame_count": len(noninitial),
+        "noninitial_exclusion_rule": "Exclude the t=0 starting GRO frame; use all frames at t>0 (not independent equilibrium samples)",
+        "noninitial_xtc_minus_trr_mean_kj_mol": float(np.mean(postinitial_errors)),
+        "noninitial_xtc_minus_trr_median_kj_mol": float(np.median(postinitial_errors)),
+        "noninitial_xtc_minus_trr_min_kj_mol": float(np.min(postinitial_errors)),
+        "noninitial_xtc_minus_trr_max_kj_mol": float(np.max(postinitial_errors)),
+        "noninitial_component_mean_xtc_minus_trr_kj_mol": {
+            key: float(np.mean([f["terms_kj_mol"][key]["xtc_minus_trr"]
+                                for f in noninitial]))
+            for key in XYZ_TERMS
+        },
         "xtc_minus_trr_median_kj_mol": float(np.median(errors)),
         "xtc_minus_trr_min_kj_mol": float(np.min(errors)),
         "xtc_minus_trr_max_kj_mol": float(np.max(errors)),
@@ -276,17 +298,23 @@ def main():
     }
     with (OUT / "paired-energy-components.csv").open("w", newline="") as stream:
         w = csv.writer(stream)
-        w.writerow(["time_ps", "xtc_minus_trr_potential", "trr_minus_md_potential",
+        w.writerow(["time_ps", "included_in_noninitial_summary",
+                    "xtc_minus_trr_potential", "trr_minus_md_potential",
                     *["xtc_minus_trr_" + key for key in XYZ_TERMS if key != "Potential"],
                     "coordinate_rms_angstrom"])
         for entry in report["frames"]:
             terms = entry["terms_kj_mol"]
             w.writerow([
-                entry["time_ps"], terms["Potential"]["xtc_minus_trr"],
+                entry["time_ps"], entry["time_ps"] > 0,
+                terms["Potential"]["xtc_minus_trr"],
                 terms["Potential"]["trr_minus_md"],
                 *[terms[key]["xtc_minus_trr"] for key in XYZ_TERMS if key != "Potential"],
                 entry["quantization_geometry"]["rms_atom_displacement_angstrom"],
             ])
+    print("PRECISION_SUMMARY", json.dumps({
+        "all_11_mean_kj_mol": report["summary"]["xtc_minus_trr_mean_kj_mol"],
+        "noninitial_10_mean_kj_mol": report["summary"]["noninitial_xtc_minus_trr_mean_kj_mol"],
+    }), flush=True)
     report["validated"] = True  # Paired experiment completed, NOT full original replication.
     write_json(report)
     print("B22_PAIRED_NATIVE_PRECISION_MECHANISM_MEASURED", flush=True)
