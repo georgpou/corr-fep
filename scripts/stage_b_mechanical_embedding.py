@@ -165,6 +165,17 @@ def grompp():
             "-p", TOPOLOGY / top, "-o", ROOT / (key + ".tpr"),
             "-po", OUT / (key + "-processed.mdp"),
             cwd=ROOT, logfile=OUT / (key + "-grompp.log"))
+        # The -po MDP can retain legacy input labels even when grompp translates
+        # their runtime meaning; inspect the compiled TPR rather than guessing.
+        dump = run(GMX, "dump", "-s", ROOT / (key + ".tpr"))
+        terms = ("vdw", "rlist", "rcoulomb", "coulombtype", "dispcorr",
+                 "pbc", "constraint", "ewald", "fourier", "rvdw")
+        selected = [line.strip() for line in dump.splitlines()
+                    if any(term in line.lower() for term in terms)]
+        if not selected:
+            raise RuntimeError("Cannot audit compiled GROMACS interaction settings")
+        (OUT / (key + "-tpr-parameters.txt")).write_text(
+            "\\n".join(selected[:120]) + "\\n")
 
 
 class MechanicalEmbedding(torch.nn.Module):
@@ -332,7 +343,7 @@ def main():
         for h in (0.002, 0.005, 0.010)
     }
     stage["precision_limitation"] = (
-        "GROMACS 2023.3 Ubuntu uses single precision; smaller finite difference steps "
+        "GROMACS 2023.3 Ubuntu is mixed precision; smaller finite difference steps "
         "are susceptible to absolute energy quantization. Do not claim 2021.6 double equivalence."
     )
     stage["validated"] = True
