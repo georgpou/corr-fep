@@ -19,7 +19,7 @@ We will compare estimators at equal QM/MM evaluation budgets and on *held-out tr
 
 ## Status
 
-**Bootstrap only.** This repository currently contains validated configuration/diagnostic utilities, data-layout checks, CPU CI, and an HPC template. It does **not** yet reproduce the paper, perform QM/MM training, or provide a validated ARM64/H200 software environment. Those are tracked milestones, not claimed achievements.
+**Stage B1 validated; Stage B2 in progress.** The repository has validated synthetic TFEP normalizing-flow benchmarks and the genuine GFN1-xTB / GROMACS mechanical-embedding QM/MM energy and gradient on one archived p38a_2g water configuration. Stage B2 now investigates multiple deposited water-trajectory frames. This does **not** yet reproduce the paper's complete 25-repeat training experiment, perform molecular QM/MM flow training, or establish a validated ARM64/H200 deployment. See [Stage B1](docs/STAGE_B_MECHANICAL_EMBEDDING.md) and [Stage B2](docs/STAGE_B_MULTIFRAME.md).
 
 ## Get started (no dataset required)
 
