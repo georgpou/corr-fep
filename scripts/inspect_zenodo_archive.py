@@ -56,12 +56,13 @@ def main():
                  f"{member.CRC:08x}"]
             )
 
-    # Find paths relevant to the minimum p38a_2g water/protein correction.
-    selected = [
-        member for member in members
-        if "p38a_2g" in member.filename.lower()
-        or "preprocess.npz" in member.filename.lower()
-    ]
+    # Select exactly the target ligand, without pulling all other ligands' large
+    # preprocess.npz files into the candidate list.
+    selected = [m for m in members if "p38a_2g" in m.filename.lower()]
+    target_by_suffix = {}
+    for member in selected:
+        suffix = Path(member.filename).suffix.lower() or "(directory)"
+        target_by_suffix[suffix] = target_by_suffix.get(suffix, 0) + 1
     summary = {
         "source": args.url,
         "dataset_doi": "10.5281/zenodo.21919704",
@@ -69,6 +70,7 @@ def main():
         "archive_members": len(members),
         "total_uncompressed_bytes": sum(m.file_size for m in members),
         "selected_matching_members": len(selected),
+        "target_suffix_counts": target_by_suffix,
         "selected_compressed_bytes": sum(m.compress_size for m in selected),
         "selected_members": [
             {"name": m.filename, "bytes": m.file_size, "compressed_bytes": m.compress_size}
@@ -78,10 +80,11 @@ def main():
     (output / "zenodo-summary.json").write_text(
         json.dumps(summary, indent=2) + "\n", encoding="utf-8"
     )
-    print(f"Indexed {len(members)} archive entries; {len(selected)} matched.")
+    print(f"Indexed {len(members)} archive entries; {len(selected)} p38a_2g matches.")
+    print("p38a_2g file extensions:", target_by_suffix)
     print(f"Inventory: {manifest}")
-    print("Candidate members (first 70):")
-    for member in selected[:70]:
+    print("p38a_2g candidate members (first 120):")
+    for member in selected[:120]:
         print(f"  {member.compress_size:>12} B compressed  {member.filename}")
 
 
