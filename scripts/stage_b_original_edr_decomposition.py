@@ -116,7 +116,7 @@ def aggregate(report):
             ((means["Bond"] + means["Angle"]) / means["Potential"]
              if means["Potential"] != 0 else None),
         "max_abs_term_sum_residual_kj_mol": float(max(
-            abs(f["decomposition"]["potential_minus_sum_shared_terms_kj_mol"])
+            abs(f["decomposition"]["potential_minus_sum_reported_terms_kj_mol"])
             for f in frames)),
         "max_abs_original_edr_minus_xvg_kj_mol": float(max(
             abs(f["original_edr_minus_xvg_kj_mol"]) for f in frames)),
@@ -222,8 +222,8 @@ def main():
             "potential_difference_kj_mol": float(delta),
             "energy_terms_kj_mol": terms,
             "decomposition": {
-                "sum_shared_term_differences_kj_mol": float(accounted),
-                "potential_minus_sum_shared_terms_kj_mol": float(delta-accounted),
+                "sum_reported_term_differences_kj_mol": float(accounted),
+                "potential_minus_sum_reported_terms_kj_mol": float(delta-accounted),
                 "bond_plus_angle_kj_mol": float(
                     terms["Bond"]["rerun_minus_original"] +
                     terms["Angle"]["rerun_minus_original"]),
@@ -234,6 +234,7 @@ def main():
                 "rerun_only_terms": sorted(rerun_keys-original_keys),
                 "unequal_improper_dihedral_labels_not_assumed_equivalent": True,
                 "missing_term_convention": "Absent term contributes zero to the enumerated GROMACS EDR sum; this is an accounting convention, not a cross-version functional-form mapping",
+                "term_sum_interpretation": "Numerical closure, not cross-engine physical equivalence of individually labeled components",
             },
             "archived_tpr_minus_rebuilt_tpr_potential_kj_mol":
                 float(archived["Potential"] - rebuilt["Potential"]),
@@ -258,7 +259,7 @@ def main():
             "angle": terms["Angle"]["rerun_minus_original"],
             "other_net": entry["decomposition"]["remaining_after_bond_angle_kj_mol"],
             "decomposition_sum_residual":
-                entry["decomposition"]["potential_minus_sum_shared_terms_kj_mol"],
+                entry["decomposition"]["potential_minus_sum_reported_terms_kj_mol"],
         }), flush=True)
     if len(report["frames"]) != 4:
         raise AssertionError("Exactly four archived production frames expected")
@@ -277,7 +278,7 @@ def main():
                 terms["Potential"]["rerun"],
                 terms["Potential"]["rerun_minus_original"],
                 *[terms[k]["rerun_minus_original"] for k in CORE],
-                f["decomposition"]["potential_minus_sum_shared_terms_kj_mol"],
+                f["decomposition"]["potential_minus_sum_reported_terms_kj_mol"],
             ])
     report["validated"] = bool(
         report["deposited"]["xvg"]["potential_identity_from_xvg"] and
