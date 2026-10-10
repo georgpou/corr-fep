@@ -37,6 +37,14 @@ SAMPLE_COUNT = 4
 PRODUCTION_START = 401  # Published training removes first 2 ns (frames 0..400).
 FD_STEP_ANGSTROM = 0.002
 FD_TOLERANCE = 0.8  # B1's double-precision complete-Hamiltonian tolerance
+# Same-frame GRO and XTC are quantized on roughly 0.01 A grids.
+# A 0.3 A per-atom allowance can mask large energy changes; allow up to
+# two coordinate ticks for one atom, while requiring tight global agreement.
+ALIGN_RMS_TOL_A = 0.001
+ALIGN_MAX_TOL_A = 0.02
+ALIGN_PAIR_TOL_A = 0.001
+ALIGN_INTERFACE_TOL_A = 0.02
+ALIGN_BOX_TOL = 0.01  # orthorhombic box lengths in A; angles in degrees
 
 
 def load_trajectory():
@@ -190,6 +198,13 @@ def check_terminal_alignment(universe, reference_xyz, ligand_indices, reference_
         "environment_nearest_ligand_distance_max_abs_difference_angstrom": float(np.max(np.abs(env_xtc - env_ref))),
         "environment_nearest_ligand_distance_rms_difference_angstrom": float(np.sqrt(np.mean((env_xtc-env_ref)**2))),
         "translation_applied_to_energy_inputs": False,
+        "acceptance_thresholds": {
+            "rms_displacement_angstrom": ALIGN_RMS_TOL_A,
+            "max_displacement_angstrom": ALIGN_MAX_TOL_A,
+            "ligand_pair_distance_max_abs_difference_angstrom": ALIGN_PAIR_TOL_A,
+            "environment_nearest_ligand_distance_max_abs_difference_angstrom": ALIGN_INTERFACE_TOL_A,
+            "box_max_abs_difference_angstrom_degrees": ALIGN_BOX_TOL,
+        },
     }
     residual_norm = np.linalg.norm(corrected_delta, axis=1)
     largest = np.argsort(residual_norm)[-10:][::-1]
@@ -241,8 +256,14 @@ def same_tpr_endpoint_energy_comparison(model, reference_xyz, reference_box,
     outliers = [item["atom_index"] for item in alignment["largest_atom_residuals"]
                 if item["post_registration_norm_angstrom"] > 0.001]
     if alignment["displacement_counts"]["above_0.001_angstrom"] != len(outliers):
-        raise AssertionError("Too many coordinate outliers for this focused probe")
-    if outliers:
+        # The report only records ten largest deviations. Do not run a
+        # misleading partial hybrid correction or fail the actual science gate.
+        comparison["outlier_coordinate_replacement"] = {
+            "skipped": "more than ten outliers; only ten largest are reported",
+            "recorded_outlier_indices": outliers,
+            "total_outlier_count": alignment["displacement_counts"]["above_0.001_angstrom"],
+        }
+    elif outliers:
         hybrid = terminal.copy()
         hybrid[outliers] = reference_xyz[outliers]
         counterfactual = components(hybrid, terminal_box)
@@ -413,11 +434,11 @@ def main():
     print("ENDPOINT_CORRESPONDENCE", json.dumps(alignment, allow_nan=False), flush=True)
     print("ENDPOINT_ENERGIES", json.dumps(result["endpoint_same_tpr_energy_comparison"], allow_nan=False), flush=True)
     residual = alignment["after_translation"]
-    if (alignment["box_max_abs_difference_angstrom_degrees"] > 0.01 or
-        residual["rms_displacement_angstrom"] > 0.05 or
-        residual["max_displacement_angstrom"] > 0.3 or
-        alignment["ligand_pair_distance_max_abs_difference_angstrom"] > 0.05 or
-        alignment["environment_nearest_ligand_distance_max_abs_difference_angstrom"] > 0.3):
+    if (alignment["box_max_abs_difference_angstrom_degrees"] > ALIGN_BOX_TOL or
+        residual["rms_displacement_angstrom"] > ALIGN_RMS_TOL_A or
+        residual["max_displacement_angstrom"] > ALIGN_MAX_TOL_A or
+        alignment["ligand_pair_distance_max_abs_difference_angstrom"] > ALIGN_PAIR_TOL_A or
+        alignment["environment_nearest_ligand_distance_max_abs_difference_angstrom"] > ALIGN_INTERFACE_TOL_A):
         raise AssertionError("XTC/GRO correspondence not established; inspect saved alignment + same-TPR energy evidence")
     gradient_arrays = {}
     for frame_index, count, time_ps, xyz, box, bond_range in sampled_frames(
