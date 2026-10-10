@@ -104,7 +104,39 @@ of approximately 1.019–1.584 Å. It failed while serializing a NumPy integer
 in the final results, *after* the gradient checks; that output bug was
 corrected without relaxing the scientific acceptance thresholds.
 
-See GitHub Actions outputs for the latest completed numerical audit.
+The fully validated [successful GitHub Actions run](https://github.com/georgpou/corr-fep/actions/runs/38070629961)
+at commit `a940277e379b025cc6d11e0c0da2988973e82401` generated
+[artifact 11677155856](https://github.com/georgpou/corr-fep/actions/runs/38070629961/artifacts/11677155856).
+The machine-readable artifact was downloaded and inspected independently:
+
+| Quantity | Validated value |
+| --- | ---: |
+| Connected MOL ligand | 46 atoms, 49 bonds, one fragment |
+| Elemental composition | C19 H19 F1 N4 O3 |
+| Formal net charge / electrons | 0 / 194 (assumed singlet) |
+| Unprocessed maximum bonded distance | 1.58401531 Å |
+| Processed bonded distance range | 1.018773–1.584016 Å |
+| GFN1-xTB energy | −82.39412711652093 Hartree |
+| Number of central-difference probes | 32 (16 atom/axis combinations × 2 steps) |
+| Probe coverage | H, C, N, O, F; x, y, z |
+| Maximum direct QM gradient discrepancy | 1.268891235374145e-6 Hartree/Bohr |
+| Wrapper versus direct QM energy discrepancy | 1.0477378964424133e-9 kJ/mol |
+| Max wrapper versus converted gradient discrepancy | 1.381167180625198e-8 kJ/mol/Å |
+| Wrapper gradient versus wrapper-energy finite difference | 0.0008278344386667413 kJ/mol/Å |
+
+Source file SHA-256 values are saved in the result artifact, for the
+GRO, TPR and ITP files. The geometry is consistent with an intact ligand;
+although the maximum coordinate shift under the published centering protocol
+was 17.56 Å, the bond lengths changed only by rounding-level differences.
+A large absolute coordinate shift alone is not evidence of an erroneous
+periodic-boundary correction or changed internal structure.
+
+The initial wrapper integration and multiple numerical derivatives now pass.
+The smoke test's thresholds were fixed prior to interpreting the completed
+scientific run; no tolerance was loosened to obtain this outcome. The
+chemical charge and closed-shell model are still model assumptions, not an
+experimental determination of the ligand's actual solution protonation
+or electronic state.
 
 ## Remaining scope
 
