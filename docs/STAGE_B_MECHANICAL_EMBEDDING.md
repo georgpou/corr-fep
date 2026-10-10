@@ -35,11 +35,11 @@ Direct tblite versus TFEP quantum discrepancies were `9.8953e-10 kJ/mol` in ener
 | 0.005 | 0.45640 |
 | 0.010 | 0.63276 |
 
-The module also accepts TFEP-style `(batch_positions, batch_cell)`, with respective shapes `(1, 3N)` and `(1, 6)`; an additional complete-module backward evaluation is independently compared with the three-component analytical gradient. The accepted strict bound is **0.8 kJ/mol/Å at 0.005 and 0.010 Å**; all relevant probes passed. Smaller 0.002 Å derivatives are retained to show loss of precision. The complete GROMACS-minus-GROMACS-plus-QM energy is reevaluated on every perturbed structure (not a surrogate). The agreement supports correct gradient signs and atom correspondence at this state point, **not** universal smoothness or force-field interchangeability.
+The Stage B1 module currently supports one configuration at a time; it is a single-point validation tool, not yet a batch-capable molecular training backend. The module also accepts TFEP-style `(batch_positions, batch_cell)`, with respective shapes `(1, 3N)` and `(1, 6)`; an additional complete-module backward evaluation is independently compared with the three-component analytical gradient. The accepted strict bound is **0.8 kJ/mol/Å at 0.005 and 0.010 Å**; all relevant probes passed. Smaller 0.002 Å derivatives are retained to show loss of precision. The complete GROMACS-minus-GROMACS-plus-QM energy is reevaluated on every perturbed structure (not a surrogate). The agreement supports correct gradient signs and atom correspondence at this state point, **not** universal smoothness or force-field interchangeability.
 
 ## Compiled TPR physical audit
 
-The Ubuntu workflow uses **GROMACS 2023.3 mixed precision**, rather than the authors' GROMACS 2021.6 double-precision MPI build. Its `grompp` translates historical `vdw-type = switch` to `vdw-type = Cut-off` and `vdw-modifier = Potential-switch`; the latter describes the same switched potential, and the **compiled TPR** is inspected with `gmx dump -s`. The final script asserts the following settings (not just the input MDP names):
+The first successful exploratory workflow used **GROMACS 2023.3 mixed precision**, rather than the authors' GROMACS 2021.6 double-precision MPI build. The current workflow instead builds GROMACS 2023.3 in **double precision** from the pinned source commit and requires a new full numerical validation; earlier mixed-precision results must not be mistaken for double-precision results. Its `grompp` translates historical `vdw-type = switch` to `vdw-type = Cut-off` and `vdw-modifier = Potential-switch`; the latter describes the same switched potential, and the **compiled TPR** is inspected with `gmx dump -s`. The final script asserts the following settings (not just the input MDP names):
 
 | Parameter | Water/full MM | Isolated ligand MM |
 | --- | --- | --- |
@@ -52,6 +52,29 @@ The larger h=0.005–0.010 Å probes mitigate energy quantization from mixed-pre
 
 ## Reproducibility and limitations
 
-The workflow `stage-b-mechanical-embedding.yml` is manually dispatchable and runs on an Actions CPU runner. It installs the real GROMACS CPU engine and pinned Python molecular stack, downloads only required remote archive entries, preprocesses the original inputs, asserts compiled physical interaction settings and audits gradient components. Failed and successful runs upload text diagnostics. The [scientific artifact](https://github.com/georgpou/corr-fep/actions/runs/38072104953/artifacts/11677555522) contains `preparation.json` (SHA256 input hashes, versions, upstream source revision, generated TPR hashes, ligand indices), `components.json` (all energies and per-probe derivatives), MDPs, compiled-TPR parameter extracts, rerun/grompp logs and `environment.txt`. Original input topologies, molecular coordinates, trajectories and binaries are not committed.
+The workflow `stage-b-mechanical-embedding.yml` is manually dispatchable and runs on an Actions CPU runner. It builds the real GROMACS double-precision CPU engine and pinned Python molecular stack, downloads only required remote archive entries, preprocesses the original inputs, asserts compiled physical interaction settings and audits gradient components. Failed and successful runs upload text diagnostics. The [scientific artifact](https://github.com/georgpou/corr-fep/actions/runs/38072104953/artifacts/11677555522) contains `preparation.json` (SHA256 input hashes, versions, upstream source revision, generated TPR hashes, ligand indices), `components.json` (all energies and per-probe derivatives), MDPs, compiled-TPR parameter extracts, rerun/grompp logs and `environment.txt`. Original input topologies, molecular coordinates, trajectories and binaries are not committed.
 
 The first attempt failed only because the optional `pyedr` EDR reader was missing; it was installed and the real engine run subsequently passed. The present result validates **one published molecular configuration**, not equilibration, statistical overlap, free energy, or real-molecule objective comparisons. The available archive contains only `repeat-0`, not all 25 original sampling repeats, and Stage B0's neutral closed-shell singlet assumption is retained. Do **not** initiate molecular flow training until this precise checkpoint is accepted and multi-frame feasibility has been considered.
+
+## Merge-readiness audit (October 10, 2026)
+
+The successful numbers above come exclusively from **the earlier mixed-precision**
+run 38072468512. A later mixed-precision experiment 38072616510 failed the
+0.8 kJ/mol/Å check at h=0.005 Å (error 2.013 kJ/mol/Å), motivating an
+explicit double-precision reproduction rather than a relaxed tolerance.
+The GROMACS 2023.3 source build was initially blocked by an upstream CMake
+nblib test-target error under disabled unit tests. The build configuration
+was adjusted to disable that target's generation without editing force-field
+parameters. In run 38072958909 the double-precision **build stage completed**;
+full energy/gradient validation remained pending when this audit was written.
+
+The current acceptance criterion is **0.8 kJ/mol/Å at each of** h=0.002,
+0.005 and 0.010 Å (not merely the two larger steps). The later probe update
+selects a solvent component with large analytical force from solvent atoms
+within 4.5 Å of any ligand atom, computing proximity under periodic boundary
+conditions. This addresses the earlier nearly-zero solvent derivative.
+Individual and aggregate errors are always preserved in the output JSON.
+
+Do not call the PR ready until a workflow against its **final commit** succeeds
+with an inspectable `components.json` artifact. The numerical table above
+must then be explicitly supplemented with final double-precision results.
