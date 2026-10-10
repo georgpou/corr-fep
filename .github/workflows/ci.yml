@@ -1,0 +1,22 @@
+name: CI
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install project
+        run: python -m pip install -e ".[dev]"
+      - name: Essential numerical smoke tests
+        run: python -m pytest -q
+      - name: Synthetic work diagnostics
+        run: python -m corr_fep.cli demo --seed 17

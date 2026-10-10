@@ -1,0 +1,23 @@
+# Metadata template; the scientific upstream runner does not consume this file yet.
+[study]
+name = "p38-mechanical-embedding-baseline"
+temperature_kelvin = 298.0
+reference = "classical"
+target = "GFN1-xTB mechanical embedding"
+
+[data]
+root = "data"
+split_by = "independent_repeat"
+train_fraction = 0.6
+validation_fraction = 0.2
+test_fraction = 0.2
+
+[model]
+mapped_cutoff_angstrom = 0.0
+conditioning_cutoff_angstrom = 3.5
+seed = 17
+
+[analysis]
+report_reduced_work = true
+report_importance_ess = true
+report_trajectory_aware_uncertainty = true

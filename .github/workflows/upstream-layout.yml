@@ -1,0 +1,23 @@
+name: Upstream layout smoke test
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: python -m pip install -e .
+      - name: Fetch original paper implementation (no trajectories)
+        run: |
+          mkdir -p external
+          git clone --depth 1 https://github.com/andrrizzi/paper-alchemical-tfep-qmmm-2026.git external/paper
+      - name: Validate upstream layout
+        run: python -m corr_fep.cli check-data --root external/paper
+      - name: Record source SHA
+        run: git -C external/paper rev-parse HEAD
