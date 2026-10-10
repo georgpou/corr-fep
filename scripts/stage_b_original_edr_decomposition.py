@@ -27,7 +27,9 @@ from stage_b_multiframe import (
     load_trajectory, register_trajectory_transformations, sampled_frames,
 )
 from stage_b_qm_singlepoint import ARCHIVE, PREFIX, load_archive
-from stage_b_reference_energy import load_reference, match_reference, evaluate_pair
+from stage_b_reference_energy import (
+    OUT as REFERENCE_OUT, load_reference, match_reference, evaluate_pair,
+)
 
 OUT = Path("results/stage-b/original-edr-decomposition").resolve()
 ARCHIVED_EDR_NAME = PREFIX + "eq/water/repeat-0/ener.edr"
@@ -128,6 +130,7 @@ def main():
     torch.set_num_threads(1)
     OUT.mkdir(parents=True, exist_ok=True)
     B1_OUT.mkdir(parents=True, exist_ok=True)
+    REFERENCE_OUT.mkdir(parents=True, exist_ok=True)
     ROOT.mkdir(parents=True, exist_ok=True)
     report = {
         "checkpoint": "B2.2c deposited EDR potential decomposition",
