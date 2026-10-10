@@ -10,15 +10,27 @@ import json
 from pathlib import Path
 
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 from remotezip import RemoteZip
 
 ARCHIVE_URL = "https://zenodo.org/records/21919704/files/alchemical_tfep.zip?download=1"
 
 
-def require_range_support(url):
+def make_session():
+    # Zenodo occasionally returns HTTP 504 for range requests.
+    # Retry known transient gateway errors; never issue an unrestricted GET.
+    session = requests.Session()
+    retry = Retry(total=3, backoff_factor=1, status_forcelist=(502, 503, 504))
+    session.mount("https://", HTTPAdapter(max_retries=retry))
+    return session
+
+
+def require_range_support(url, session=None):
     # Important: a normal GET would attempt to transfer ~49 GB.
     # stream=True and closing before reading the body prevents that fallback.
-    with requests.get(
+    get = session.get if session else requests.get
+    with get(
         url, headers={"Range": "bytes=-32"}, stream=True, timeout=90
     ) as response:
         if response.status_code != 206 or "Content-Range" not in response.headers:
@@ -39,12 +51,13 @@ def main():
 
     output = Path(args.output_dir)
     output.mkdir(parents=True, exist_ok=True)
-    require_range_support(args.url)
+    with make_session() as session:
+        require_range_support(args.url, session=session)
 
-    # RemoteZip reads the tail/central directory via HTTP byte ranges.
-    # No trajectory/energy-file payloads are requested.
-    with RemoteZip(args.url, initial_buffer_size=512 * 1024, timeout=120) as archive:
-        members = archive.infolist()
+        # RemoteZip reads the tail/central directory via HTTP byte ranges.
+        # No trajectory/energy-file payloads are requested.
+        with RemoteZip(args.url, session=session, initial_buffer_size=512 * 1024, timeout=120) as archive:
+            members = archive.infolist()
 
     manifest = output / "zenodo-members.tsv"
     with manifest.open("w", newline="", encoding="utf-8") as stream:
