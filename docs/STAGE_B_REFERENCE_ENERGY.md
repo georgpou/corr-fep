@@ -35,3 +35,35 @@ The script `scripts/stage_b_precision_roundtrip.py` and workflow `.github/workfl
 This is a **mechanistic test on newly generated frames**, NOT restoration of the original full-precision TRR or a substitute for the original dataset. An exact numerical match between a new compressed-minus-uncompressed bias and the observed original residual would support compression as the dominant cause; matching only scale does not uniquely establish causation. No fitting, offset, flow training, or free-energy inference is permitted.
 
 **Status**: committed, numerical result pending GitHub Actions run https://github.com/georgpou/corr-fep/actions/runs/38091870934 . Inspect paired artifacts and document measured results before releasing PR #11 for review. Keep issue #9 open.
+
+
+## B2.2c completed: original deposited EDR decomposition (2026-10-11)
+
+**Scientific check PASSED** for four strictly time-matched production frames.
+Workflow: https://github.com/georgpou/corr-fep/actions/runs/38092879790
+Artifact: https://github.com/georgpou/corr-fep/actions/runs/38092879790/artifacts/11684787880
+Input archive member: `lig_p38a_2g/eq/water/repeat-0/ener.edr` (2,948,820 B).
+Machine-readable result: `results/stage-b/original-edr-decomposition/original-edr-decomposition.json` (Actions artifact).
+CSV: `original-edr-components.csv`.
+
+The original GROMACS **2021.6 double** energy EDR and selected `ener.xvg` Potential differ by at most **4.95e-7 kJ/mol**. The four timestamp matches are exact. Original archived `eq.tpr` versus rebuilt single-point `full.tpr`, both rerun in **2023.3 double** with the same XTC-derived G96 input, differ by at most **1.31e-8 kJ/mol**. All original-vs-rerun EDR energy component differences account for their total potential differences to **2.59e-11 kJ/mol**.
+
+| Time (ps) | Original Potential (kJ/mol) | Rerun minus original (kJ/mol) | Bond | Angle | Other net |
+| ---: | ---: | ---: | ---: | ---: | ---: |
+| 2005 | -117320.952573 | +258.513927 | +251.214173 | +51.505982 | -44.206228 |
+| 5335 | -116908.160902 | +303.235306 | +250.172854 | +15.686662 | +37.375790 |
+| 8665 | -117655.515194 | +261.642699 | +187.720759 | +16.570971 | +57.350969 |
+| 12000 | -117121.358510 | +317.728542 | +252.878021 | +62.944590 | +1.905931 |
+| **Mean** | | **+285.280119** | **+235.496452** | **+36.677051** | **+13.106616** |
+
+**95.41%** of mean Potential difference is bond plus angle increase (272.1735/285.2801 kJ/mol). This is consistent with and substantially strengthens the independent paired native TRR/XTC experiment (new ten noninitial snapshots: mean +263.34 kJ/mol, mainly bond/angle). Terms aside from bond/angle have frame-dependent values of either sign; they must not be silently subtracted as a constant.
+
+The original EDR reports `Improper Dih.` while the rebuilt rerun reports `Per. Imp. Dih.`. The audit reports these as distinct EDR labels and accounts for each separately, **without asserting equality of their underlying functional forms**. The mean separate contributions are -5.375 and +5.291 kJ/mol; their net is small. The reported closure proves numeric energy accounting, not functional-form equivalence between GROMACS versions.
+
+**Scientific interpretation:** XTC-coordinate quantization is the predominant, experimentally demonstrated and physically plausible explanation for the magnitude/sign of the discrepancy, but the original full-precision TRR was not deposited, so its exact frame-by-frame contribution cannot be reconstructed; the 2021.6/2023.3 version difference also remains. Thus this is **not** a proof of exact energy equivalence or a license to use an arbitrary offset, corrected absolute energies, or inferred importance weights.
+
+### Implication for Corr-FEP training
+
+The next method-design checkpoint is explicit definition of `U_FF(x)` **on exactly the coordinates used to evaluate `U_QMMM(x)`**. An internally consistent rerun of the complete classical reference potential on each deposited XTC configuration is preferable to pairing XTC QM/MM evaluations with the authors' original `ener.xvg` energies at higher-precision positions. This will define a computationally consistent correction observable, but because rounded XTC differs from the actual original trajectory and original sampling measure, **the resulting weights cannot automatically be claimed to reproduce the original TFEP estimator or unbiased free energies**.
+
+No flow training or free-energy results are asserted here. Keep scientific issue #9 open until the chosen consistent reference definition and its sampling implications are documented as a deliberate modeling decision. PR #11 remains unmerged pending user approval.
