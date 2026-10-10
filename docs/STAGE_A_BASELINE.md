@@ -29,9 +29,9 @@ and 32-unit hidden layers are used instead of the original six; the
 learning rate and optimizer steps are reduced-system choices, **not a
 reproduction of the molecular hyperparameters**.
 
-Samples are iid by construction, with independent seeds for the reference
-training and validation arrays (both obtained from successive draws with the
-same generator). The validation array is never used for gradients.
+Samples are iid by construction. Training and validation are disjoint,
+independent draws from the same seeded generator (not independently seeded
+generators). The validation array is never used for gradients.
 Training rows summarize a fixed subset of the training pool.
 
 ## Run
@@ -52,6 +52,11 @@ variance, log-domain raw ESS, free-energy estimate/error, Jacobian
 quantiles and standard deviation, and last-batch gradient norm.
 The final flow is additionally checked for inverse consistency and
 agreement with an autograd full Jacobian determinant at a sample.
+A separate analytically exact linear Gaussian map must yield constant work
+and reproduce the known reduced free energy within 1e-10; this checks the
+work estimator and potential/Jacobian sign conventions independently of
+whether the MAF has converged. Initial gradient norms are null in strict
+JSON, since no backward pass exists at optimizer step zero.
 
 The raw ESS is **not** an autocorrelation-adjusted effective sample size,
 though the synthetic inputs are iid. It cannot by itself exclude missing

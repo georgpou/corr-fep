@@ -121,6 +121,32 @@ def verify_mapping(flow):
     }
 
 
+def verify_exact_estimator(target, x):
+    """A known-answer test independent of the *trained* model.
+
+    A linear Gaussian transport makes generalized work exactly constant;
+    failure therefore indicates a potential, determinant, or estimator bug.
+    """
+    cholesky = torch.linalg.cholesky(target.precision)
+    linear_map = torch.linalg.inv(cholesky.T)
+    sign, log_j = torch.linalg.slogdet(linear_map)
+    assert sign.item() > 0
+    mapped = target.mean + x @ linear_map.T
+    work = target(mapped) - reference_potential(x) - log_j
+    work_np = work.detach().cpu().numpy()
+    estimate = summarize_work(work_np)["delta_f_reduced"]
+    largest_error = float(np.max(np.abs(work_np - target.exact_df)))
+    assert abs(estimate - target.exact_df) < 1e-10, (
+        f"Known-answer free-energy estimator mismatch: {estimate} != {target.exact_df}"
+    )
+    assert largest_error < 1e-10, f"Exact map has nonconstant work: {largest_error}"
+    return {
+        "estimated_df_reduced": estimate,
+        "exact_df_reduced": target.exact_df,
+        "max_work_error_reduced": largest_error,
+    }
+
+
 def save_plots(rows, first_work, last_work, final_jac, folder):
     train = [r for r in rows if r["split"] == "train"]
     validation = [r for r in rows if r["split"] == "validation"]
@@ -211,7 +237,7 @@ def main():
 
     rows = []
     batch_losses = []
-    gradient_norm = float("nan")
+    gradient_norm = None  # No gradient exists before the first optimizer step.
     start = time.perf_counter()
     first_val_work = None
     final_val_work = None
@@ -251,9 +277,9 @@ def main():
         batch_losses.append(float(loss.detach()))
 
     checks = verify_mapping(flow)
-    # Known-answer estimators must be correct at initialization and approximately
-    # converge after optimization; the tolerance is intentionally not used to
-    # label a poor optimization run as a software failure.
+    estimator_check = verify_exact_estimator(target, val_x[:32])
+    # Do not impose a training-convergence threshold on the fitted MAF:
+    # its held-out error is a reported *result*, not a software-pass condition.
     final_val = next(r for r in reversed(rows) if r["split"] == "validation")
     with (args.out / "metrics.csv").open("w", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=list(rows[0]))
@@ -270,12 +296,13 @@ def main():
         "final_validation": final_val,
         "exact_df_reduced": target.exact_df,
         "jacobian_and_inverse_checks": checks,
+        "exact_estimator_check": estimator_check,
         "target_potential_evaluations": target.evaluations,
         "elapsed_s": elapsed,
         "model_parameters": sum(p.numel() for p in flow.parameters()),
         "warning": "Raw ESS only; finite held-out source sampling cannot rule out missing target modes.",
     }
-    (args.out / "summary.json").write_text(json.dumps(result, indent=2))
+    (args.out / "summary.json").write_text(json.dumps(result, indent=2, allow_nan=False))
     (args.out / "timing.json").write_text(json.dumps({
         "elapsed_s": elapsed, "optimization_steps": args.steps,
         "target_potential_evaluations": target.evaluations,
