@@ -78,7 +78,9 @@ def write_mdp():
         match = re.match(r"^\s*([A-Za-z0-9_-]+)\s*=", line)
         if match:
             key = match.group(1).lower()
-            if key in ("nstxtcout", "unconstrained-start"):  # legacy XTC and continuation names
+            if key in ("nstxtcout", "unconstrained-start", "ld-seed"):
+                # Remove legacy trajectory keys and pre-existing thermostat seed;
+                # append one unambiguous ld-seed below, not a duplicate.
                 continue
             if key in overrides:
                 if key in seen:
