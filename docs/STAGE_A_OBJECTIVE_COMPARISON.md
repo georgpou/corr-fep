@@ -9,9 +9,9 @@ ESS and analytical free-energy accuracy simultaneously**, not loss reduction
 alone. The single modification is an affinity objective with exponent 1/2,
 chosen before seeing A3 results; no hyperparameter sweep is planned.
 
-Let (q_\theta\) be the normalized mapped reference and (p_B\) the normalized target.
-For an invertible map (y=M_\theta(x)\), generalized work is
-(w=u_B(y)-u_A(x)-\log|\det J_\theta(x)|\).
+Let `q_theta` be the normalized mapped reference and `p_B` the normalized target.
+For an invertible map `y=M_theta(x)`, generalized work is
+`w=u_B(y)-u_A(x)-log|det J_theta(x)|`.
 The **Bhattacharyya affinity** obeys
 
 ```text

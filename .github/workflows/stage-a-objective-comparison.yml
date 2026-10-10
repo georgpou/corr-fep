@@ -1,8 +1,6 @@
 name: Stage A3 - Matched objective comparison
 on:
   workflow_dispatch:
-  # Connector has no workflow-dispatch mutation; the feature-branch push
-  # runs the first experiment. Manual dispatch remains available afterward.
   push:
     branches:
       - stage-a/objective-comparison
