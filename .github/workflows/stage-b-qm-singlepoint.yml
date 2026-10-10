@@ -24,7 +24,8 @@ jobs:
       - name: Run GFN1-xTB and gradient finite difference
         run: |
           python -m pip freeze > environment.txt
-          python scripts/stage_b_qm_singlepoint.py | tee singlepoint.log
+          set -o pipefail
+          python -u scripts/stage_b_qm_singlepoint.py | tee singlepoint.log
           cp environment.txt singlepoint.log results/stage-b/qm-singlepoint/
       - name: Upload small inputs inventory and scientific output
         if: always()
