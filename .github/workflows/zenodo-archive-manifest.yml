@@ -1,0 +1,43 @@
+name: Checkpoint 1 - Zenodo archive inventory
+
+on:
+  push:
+    branches:
+      - checkpoint1/archive-index-and-sqm-baseline
+    paths:
+      - scripts/inspect_zenodo_archive.py
+      - .github/workflows/zenodo-archive-manifest.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  index:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install archive index dependencies
+        run: python -m pip install requests remotezip
+      - name: Record inspection environment
+        run: |
+          mkdir -p archive-metadata
+          python --version > archive-metadata/software.txt
+          python -m pip freeze >> archive-metadata/software.txt
+          git rev-parse HEAD > archive-metadata/commit.txt
+      - name: Read archive central directory (HTTP byte ranges only)
+        run: |
+          set -o pipefail
+          python scripts/inspect_zenodo_archive.py --output-dir archive-metadata \
+            2>&1 | tee archive-metadata/index.log
+      - name: Preserve inventory or failure evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: zenodo-archive-metadata
+          path: archive-metadata/
+          if-no-files-found: warn

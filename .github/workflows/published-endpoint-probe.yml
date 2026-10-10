@@ -1,0 +1,34 @@
+name: Checkpoint 1 - Published endpoint data probe
+on:
+  push:
+    branches:
+      - checkpoint1/archive-index-and-sqm-baseline
+    paths:
+      - scripts/check_published_endpoint.py
+      - .github/workflows/published-endpoint-probe.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  recompute:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install data reader
+        run: python -m pip install numpy==1.26.4 requests remotezip
+      - name: Independent archived-data recalculation
+        run: |
+          set -o pipefail
+          mkdir -p archive-metadata
+          python scripts/check_published_endpoint.py 2>&1 | tee archive-metadata/probe.log
+      - name: Save numeric analysis or failure log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p38a-2g-published-endpoint
+          path: archive-metadata/
+          if-no-files-found: warn
