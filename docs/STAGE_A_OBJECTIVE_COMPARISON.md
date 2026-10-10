@@ -77,10 +77,12 @@ added normalized importance-weighted target-basin occupancies and fuller
 optimizer/Jacobian reporting; it reproduced the same training and
 independent-test estimates. Both runs and the lightweight CI passed.
 
-Scientific artifacts from the rerun (including raw configurations, mapped
-positions, work arrays, metrics, optimization logs, plots and dependency
-freeze) are available at
-[GitHub Actions artifact 11675397532](https://github.com/georgpou/corr-fep/actions/runs/38068195481/artifacts/11675397532).
+The final [review-corrected execution](https://github.com/georgpou/corr-fep/actions/runs/38068360022)
+verified the same scientific results, with an additional plot of the
+objective-specific actual minibatch loss. Scientific artifacts (raw
+configurations, mapped positions, work arrays, metrics, optimization logs,
+plots and dependency freeze) are available at
+[GitHub Actions artifact 11675822058](https://github.com/georgpou/corr-fep/actions/runs/38068360022/artifacts/11675822058).
 
 Each row below is based on an independent **8192-configuration final test**.
 All energy/free-energy/work numbers are reduced (kBT). The exact free energy is
