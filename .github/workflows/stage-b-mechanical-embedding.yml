@@ -34,7 +34,8 @@ jobs:
             -DGMX_MPI=OFF -DGMX_THREAD_MPI=ON -DGMX_GPU=OFF \
             -DGMX_DEFAULT_SUFFIX=OFF -DGMX_FFT_LIBRARY=fftw3 \
             -DGMX_BUILD_OWN_FFTW=OFF -DGMX_BUILD_UNITTESTS=OFF \
-            -DGMX_SIMD=None -DGMXAPI=OFF
+            -DGMX_SIMD=None -DGMXAPI=OFF -DBUILD_TESTING=OFF \
+            -DGMX_INSTALL_NBLIB_API=OFF
           cmake --build "$RUNNER_TEMP/gromacs-build" --parallel 4
           cmake --install "$RUNNER_TEMP/gromacs-build"
           echo "$RUNNER_TEMP/gromacs-install/bin" >> "$GITHUB_PATH"
