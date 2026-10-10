@@ -33,6 +33,9 @@ XTC_NAME = PREFIX + "eq/water/repeat-0/traj_comp.xtc"
 # The deposited water XTC is ~73 MB. Read that ZIP member only, never the archive.
 MAX_XTC_BYTES = 160_000_000
 SAMPLE_COUNT = 4
+PRODUCTION_START = 401  # Published training removes first 2 ns (frames 0..400).
+FD_STEP_ANGSTROM = 0.002
+FD_TOLERANCE = 0.8  # B1's double-precision complete-Hamiltonian tolerance
 
 
 def load_trajectory():
@@ -81,9 +84,9 @@ def sampled_frames(universe, ligand_indices, reference_xyz):
     universe.trajectory.add_transformations(
         trans.unwrap(ligand), trans.center_in_box(ligand), trans.wrap(environment))
     n_frames = len(universe.trajectory)
-    if n_frames < SAMPLE_COUNT:
-        raise RuntimeError(f"Only {n_frames} XTC frames; need {SAMPLE_COUNT}")
-    indices = np.linspace(0, n_frames - 1, SAMPLE_COUNT, dtype=int)
+    if n_frames - PRODUCTION_START < SAMPLE_COUNT:
+        raise RuntimeError(f"Only {n_frames - PRODUCTION_START} production frames")
+    indices = np.linspace(PRODUCTION_START, n_frames - 1, SAMPLE_COUNT, dtype=int)
     if len(np.unique(indices)) != SAMPLE_COUNT:
         raise AssertionError("Frame selection not unique")
     previous_time = -float("inf")
@@ -108,6 +111,79 @@ def sampled_frames(universe, ligand_indices, reference_xyz):
         yield int(index), n_frames, frame_time, xyz, box, [
             float(lengths.min()), float(lengths.max())
         ]
+
+
+def check_terminal_alignment(universe, reference_xyz, ligand_indices, reference_box):
+    """Independent positional anchor: XTC endpoint versus deposited GRO snapshot.
+
+    This check does not assume identity of the coordinates: distinct or lossy
+    snapshots are a recorded observation, not silently treated as identical.
+    """
+    from MDAnalysis.lib.distances import minimize_vectors
+    ts = universe.trajectory[-1]
+    terminal = np.asarray(universe.atoms.positions, dtype=np.float64).copy()
+    box = np.asarray(ts.dimensions, dtype=np.float64)
+    if terminal.shape != reference_xyz.shape:
+        raise AssertionError("Terminal XTC and GRO have different atom counts")
+    if not np.allclose(box, reference_box, rtol=0, atol=0.01):
+        raise AssertionError("Terminal XTC/GRO periodic boxes differ")
+    displacement = minimize_vectors(terminal - reference_xyz, box)
+    norms = np.linalg.norm(displacement, axis=1)
+    ligand_mask = np.zeros(len(norms), dtype=bool)
+    ligand_mask[ligand_indices] = True
+    results = {
+        "reference_assumption": "XTC terminal frame and archived eqout.gro correspond to the same time; positional comparison tests this",
+        "terminal_time_ps": float(ts.time),
+        "terminal_box_angstrom_degrees": box.tolist(),
+        "gro_box_angstrom_degrees": reference_box.tolist(),
+        "rms_displacement_angstrom": float(np.sqrt(np.mean(norms**2))),
+        "max_displacement_angstrom": float(norms.max()),
+        "ligand_rms_displacement_angstrom": float(np.sqrt(np.mean(norms[ligand_mask]**2))),
+        "environment_rms_displacement_angstrom": float(np.sqrt(np.mean(norms[~ligand_mask]**2))),
+    }
+    # A wrong trajectory pairing should not be accepted just because XTC
+    # and GRO both have the expected atom count. Tight enough to flag
+    # neighboring frames, loose enough for compressed XTC/GRO rounding.
+    if results["rms_displacement_angstrom"] > 0.05 or results["max_displacement_angstrom"] > 0.3:
+        raise AssertionError("Terminal XTC/GRO positional mismatch: " + json.dumps(results))
+    return results
+
+
+def complete_gradient_fd(model, xyz, cell, grad, ligand_indices):
+    """Two independent central differences of the full subtractive Hamiltonian."""
+    from MDAnalysis.lib.distances import distance_array
+    ligand_atom = int(ligand_indices[0])
+    env = np.setdiff1d(np.arange(len(xyz)), ligand_indices)
+    shell_distance = distance_array(xyz[env], xyz[ligand_indices], box=cell).min(axis=1)
+    shell = env[shell_distance < 4.5]
+    if not len(shell):
+        raise AssertionError("No solvent/environment atom inside ligand interface shell")
+    best_atom, best_axis = np.unravel_index(np.abs(grad[shell]).argmax(), grad[shell].shape)
+    probes = [(ligand_atom, int(np.abs(grad[ligand_atom]).argmax()), "ligand"),
+              (int(shell[best_atom]), int(best_axis), "environment")]
+    checks = []
+    with torch.no_grad():
+        for atom, axis, region in probes:
+            plus, minus = xyz.copy(), xyz.copy()
+            plus[atom, axis] += FD_STEP_ANGSTROM
+            minus[atom, axis] -= FD_STEP_ANGSTROM
+            def energy(positions):
+                x = torch.tensor(positions.reshape(1, -1), dtype=torch.float64)
+                cell_tensor = torch.tensor(cell.reshape(1, 6), dtype=torch.float64)
+                return float(model(x, cell_tensor).item())
+            e_plus, e_minus = energy(plus), energy(minus)
+            numeric = (e_plus - e_minus) / (2 * FD_STEP_ANGSTROM)
+            analytic = float(grad[atom, axis])
+            error = abs(numeric - analytic)
+            entry = {"region": region, "atom": atom, "axis": axis,
+                     "step_angstrom": FD_STEP_ANGSTROM,
+                     "numeric_kj_mol_angstrom": numeric,
+                     "analytic_kj_mol_angstrom": analytic,
+                     "absolute_error_kj_mol_angstrom": error}
+            checks.append(entry)
+            if not np.isfinite(error) or error > FD_TOLERANCE:
+                raise AssertionError("Complete-Hamiltonian finite difference failed: " + json.dumps(entry))
+    return checks
 
 
 def evaluate(model, xyz, cell, ligand_indices, atomic_numbers):
@@ -191,10 +267,9 @@ def main():
     grompp()
     initial = mda.Universe(str(ROOT / "archived-eq.tpr"), str(ROOT / "archived-eqout.gro"))
     universe = mda.Universe(str(ROOT / "archived-eq.tpr"), str(trajectory_path))
-    if not np.array_equal(initial.atoms.names, universe.atoms.names):
-        raise AssertionError("XTC/TPR atom ordering differs from GRO/TPR")
-    if not np.array_equal(initial.atoms.types, universe.atoms.types):
-        raise AssertionError("XTC/TPR atom types differ from GRO/TPR")
+    # XTC does not contain names or types. Both Universe instances would
+    # inherit identical metadata from the same TPR, so comparing it is vacuous.
+    # Use actual coordinate correspondence as the independent alignment check.
     model = MechanicalEmbedding(ligand_idx, numbers, reference_box)
     result = {
         "checkpoint": "B2.1, genuine molecular multiframe QM/MM feasibility only",
@@ -214,20 +289,24 @@ def main():
                       "ligand_elements": numbers.tolist(),
                       "atom_count": int(len(reference_xyz)),
                       "topology_validation": b0_info},
-        "selection": {"rule": "four uniformly index-spaced frames including trajectory endpoints",
+        "selection": {"rule": "four uniformly index-spaced production frames 401..2400",
                       "not_statistically_independent": True},
         "frames": [], "validated": False,
     }
+    # Keep GRO/XTC discrepancy for high-priority issue #9 investigation.
+    result["xtc_gro_alignment"] = check_terminal_alignment(universe, reference_xyz, ligand_idx, reference_box)
     write_summary(result)
     gradient_arrays = {}
     for frame_index, count, time_ps, xyz, box, bond_range in sampled_frames(
             universe, ligand_idx, reference_xyz):
         print(f"Evaluating frame {frame_index}/{count} at t={time_ps} ps", flush=True)
         energies, grad, diagnostics = evaluate(model, xyz, box, ligand_idx, numbers)
+        fd_checks = complete_gradient_fd(model, xyz, box, grad, ligand_idx) if frame_index == 401 else []
         entry = {"frame_index": frame_index, "total_frames": count,
                  "time_ps": time_ps, "periodic_box_angstrom_degrees": box.tolist(),
                  "bond_length_range_angstrom": bond_range,
-                 "energies_kj_mol": energies, "diagnostics": diagnostics}
+                 "energies_kj_mol": energies, "diagnostics": diagnostics,
+                 "complete_hamiltonian_fd_checks": fd_checks}
         result["frames"].append(entry)
         gradient_arrays[f"gradient_frame_{frame_index}_kj_mol_A"] = grad
         print("FRAME_QMMM", json.dumps(entry, allow_nan=False), flush=True)
