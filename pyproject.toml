@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "corr-fep"
+version = "0.1.0"
+description = "Reproducibility and diagnostics for FF-to-QM/MM targeted free-energy corrections"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+dependencies = ["numpy>=1.24,<2.0"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8,<10", "ruff>=0.8,<1"]
+analysis = ["scipy>=1.11", "matplotlib>=3.8", "MDAnalysis>=2.6"]
+# Install full original training stack following docs/REPRODUCIBILITY.md, not CI.
+
+[project.scripts]
+corr-fep = "corr_fep.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
