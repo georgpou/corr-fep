@@ -34,3 +34,39 @@ diagnostic of missing target modes, not necessarily a failure of Jacobian
 regularization. An overlap/importance penalty could reinforce one-mode
 collapse. Such penalties must not be chosen simply because they improve
 training ESS.
+
+## Executed three-seed cloud experiment (2026-10-10)
+
+[Successful workflow](https://github.com/georgpou/corr-fep/actions/runs/38066112518),
+[scientific artifacts](https://github.com/georgpou/corr-fep/actions/runs/38066112518/artifacts/11674893516).
+All figures below are calculated from **genuinely trained upstream TFEP MAFs** and
+4096 held-out iid samples per seed. Values are dimensionless (kBT).
+
+Analytical exact Delta f = **1.96334988787746**.
+
+| Seed | Step 100 validation ESS | Step 350 validation ESS | Step 350 Delta f | Step 350 left-mode fraction | Step 350 training mean work |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 17 | 819.4 | 910.2 | 2.0776 | 0.748 | 4.8567 |
+| 29 | 830.2 | 144.9 | 2.3754 | 0.932 | 4.5486 |
+| 43 | 754.5 | 61.0 | 1.8970 | 0.250 | 5.7791 |
+
+The **seed-29** run demonstrates the intended pathology. Its training
+mean work decreases steadily from ~9.15 at step 100 to ~4.55 by step 350;
+meanwhile, held-out ESS deteriorates from ~830 to ~145 (out of 4096),
+the mapped left-mode population grows to ~93%, and free-energy error
+increases to ~0.412 kBT. Seed 43 also exhibits deterioration of ESS and
+mode balance, with a smaller final energy error. Seed 17 is less severe.
+
+The seed-to-seed variability is scientifically relevant: mode collapse can
+favor either mode, despite an exactly symmetric target. The results establish
+a **controlled synthetic failure case**, not reproduction of the molecular
+pathology and not evidence that ESS penalties or Jacobian regularization
+will fix it. Invertible maps have full mathematical support; empirical
+mode undercoverage here is finite-sample/practical, not literal zero support.
+
+**Next modification to test:** a single objective-level intervention
+against mode concentration with identical inputs and evaluated at matched
+target-energy budgets; keep architecture unchanged. An ESS-only penalty
+may improve within-mode weights without recovering the missing mode,
+so success must require simultaneous improvement in held-out ESS,
+mode balance and independently known free-energy accuracy.
