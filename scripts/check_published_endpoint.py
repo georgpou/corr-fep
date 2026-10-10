@@ -54,12 +54,19 @@ def numeric_result(archive, phase, tensor_arrays):
     # TFEP saved 50,000 training values spanning all 25 repeats. Select ONLY
     # mapped samples from repeat-0, which can be paired to actual FF energies.
     # This 2,000-sample reweighting is NOT the paper's 50,000-sample result.
-    available = indices < len(reference)
-    subset_indices = indices[available]
     potential_all = np.asarray(tensor_arrays["potential"], dtype=np.float64).ravel()
     logdet_all = np.asarray(tensor_arrays["log_det_J"], dtype=np.float64).ravel()
-    if len(potential_all) != len(indices) or len(logdet_all) != len(indices):
+    # Mirror tfep v0.2 TFEPLogger._build_mask(): archive '__mask' denotes
+    # valid/written samples. read_train_tensors(..., remove_nans='potential')
+    # intersects this mask with finite target potentials.
+    archive_mask = np.asarray(
+        tensor_arrays.get("__mask", np.ones(len(indices), dtype=bool)),
+        dtype=bool,
+    ).ravel()
+    if any(len(x) != len(indices) for x in (potential_all, logdet_all, archive_mask)):
         raise ValueError("Tensor lengths do not match trajectory indices")
+    available = (indices < len(reference)) & archive_mask & np.isfinite(potential_all)
+    subset_indices = indices[available]
     if subset_indices.size == 0:
         return {"status": "no overlap between saved maps and available FF reference"}
     work = (
@@ -78,6 +85,7 @@ def numeric_result(archive, phase, tensor_arrays):
         "reference_files": energy_paths,
         "reference_samples": int(len(reference)),
         "full_training_samples": int(len(indices)),
+        "archive_mask_valid_samples": int(archive_mask.sum()),
         "first_repeat_candidate_samples": int(len(subset_indices)),
         "valid_samples": int(len(work)),
         "invalid_samples": int(len(valid) - valid.sum()),
