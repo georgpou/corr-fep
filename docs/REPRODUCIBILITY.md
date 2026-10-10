@@ -22,7 +22,7 @@ The [tfep package](https://github.com/andrrizzi/tfep) is a separate dependency; 
 - Paper implementation: [`andrrizzi/paper-alchemical-tfep-qmmm-2026`](https://github.com/andrrizzi/paper-alchemical-tfep-qmmm-2026), commit `b8dfd897ebd914b4e592221710b397a2758353ce`.
 - TFEP v0.2: tag `0.2` at commit `0bc369a1194c688bb6ac997cc6b7c2db2b063c9e` (upstream environment exports `tfep==1+unknown`, **not** an exact source pin).
 - Published environment: Python 3.11.10, PyTorch 2.4.0, Lightning 2.4.0, MDAnalysis 2.7.0, NumPy 1.26.4, tblite and tblite-python 0.3.0. The archived Conda builds are linux-64-specific; GROMACS 2021.6 is reported in the paper.
-- Zenodo [10.5281/zenodo.21919704](https://zenodo.org/records/21919704) contains a **single** 49.2 GB `alchemical_tfep.zip`, described as *representative* MD trajectories, FEP and TFEP data. **The verified ZIP central directory has 9,093 entries and contains only `repeat-0` for `lig_p38a_2g` in both water and protein. The remaining 24 repeats used by the paper are not archived for this ligand.** A published 50,000-frame retraining cannot proceed from this archive alone. [Archive inventory run](https://github.com/georgpou/corr-fep/actions/runs/38062133720).
+- Zenodo [10.5281/zenodo.21919704](https://zenodo.org/records/21919704) contains a **single** 49.2 GB `alchemical_tfep.zip`, described as *representative* MD trajectories, FEP and TFEP data. **The verified ZIP central directory has 9,093 entries and contains only `repeat-0` for every one of the 32 ligands in both water and protein (64 ligand/phase combinations). The remaining 24 repeats used by the paper are not archived.** A published 50,000-frame retraining cannot proceed from this archive alone. [Archive inventory run](https://github.com/georgpou/corr-fep/actions/runs/38062133720).
 - To inspect ZIP members via HTTP byte ranges (without transferring the archive): `pip install requests remotezip`; `python scripts/inspect_zenodo_archive.py`. An optional GitHub Actions workflow also records the archive inventory in an artifact. This depends on Zenodo honoring byte-range requests; failure must not trigger a full ZIP download.
 
 ## Stage 1: Obtain inputs, NOT new alchemical FEP
@@ -39,9 +39,9 @@ In the *upstream* directory and validated upstream environment, start with the p
 # Execute from a checkout of the authors' repository, after installing compatible
 # dependencies and restoring the actual input-data directory tree.
 # Ligand-only mapped region, with the 0.0–3.5 Å environment shell conditioning.
-python run_tfep.py preprocess --ligand p38a_2g --phase water --mapcut 0.0 --condcut 3.5
-python run_tfep.py train --ligand p38a_2g --phase water --potential sqm
-python run_tfep.py estimate --ligand p38a_2g --phase water
+python run_tfep.py preprocess --ligand p38a_2g --phase water --mapcut 0.0 --condcut 3.5 --outdir tfep-mixedmaf/map00-cond35
+python run_tfep.py train --ligand p38a_2g --phase water --potential sqm --outdir tfep-mixedmaf/map00-cond35
+python run_tfep.py estimate --ligand p38a_2g --phase water --outdir tfep-mixedmaf/map00-cond35
 ```
 
 **Important correction**: the upstream docstring's `--potential dft` command invokes CPMD/MiMiC, **not** the paper's GFN1-xTB mechanical-embedding target. The actual `sqm` code calls `GROMACSPotential(full) - GROMACSPotential(ligand) + TBLitePotential(method='GFN1-xTB')`. With the argparse CLI, omitting `--onlyref` sets `only_reference_conditioning=False` and uses the environment conditioning region. Adding `--onlyref` selects reference-frame atoms only. Use the same run configuration when comparing to the paper's results. These commands have **not been executed** with the published trajectories.
