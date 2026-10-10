@@ -174,8 +174,28 @@ def grompp():
                     if any(term in line.lower() for term in terms)]
         if not selected:
             raise RuntimeError("Cannot audit compiled GROMACS interaction settings")
+        # Do not assume that grompp's legacy MDP translation preserved physics.
+        expected = {
+            "full": {
+                "pbc": "xyz", "coulombtype": "PME", "rcoulomb": "1.1",
+                "vdw-type": "Cut-off", "vdw-modifier": "Potential-switch",
+                "rvdw-switch": "1", "rvdw": "1.1", "DispCorr": "EnerPres",
+            },
+            "ligand": {
+                "pbc": "xyz", "coulombtype": "Cut-off", "rcoulomb": "5",
+                "vdw-type": "Cut-off", "vdw-modifier": "Potential-switch",
+                "rvdw-switch": "4.9", "rvdw": "5", "DispCorr": "EnerPres",
+            },
+        }[key]
+        for field, value in expected.items():
+            pattern = (r"^\s*" + re.escape(field) + r"\s*=\s*" +
+                       re.escape(value) + r"\s*$")
+            if not any(re.match(pattern, line, flags=re.I)
+                       for line in dump.splitlines()):
+                raise AssertionError(f"Compiled {key} TPR changed {field}; "
+                                     f"expected {value!r}")
         (OUT / (key + "-tpr-parameters.txt")).write_text(
-            "\\n".join(selected[:120]) + "\\n")
+            "\n".join(selected[:120]) + "\n")
 
 
 class MechanicalEmbedding(torch.nn.Module):
