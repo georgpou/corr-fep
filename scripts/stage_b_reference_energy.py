@@ -138,14 +138,25 @@ def evaluate_pair(model, xyz, box, name):
     new_terms = edr_terms(rebuilt_edr)
     if abs(new_terms["Potential"] - rebuilt_energy) > 0.001:
         raise AssertionError("TFEP scalar and rebuilt EDR Potential disagree")
+    # Keep the raw EDR for each frame; TFEP overwrites its rerun-full/energy.edr.
+    rebuilt_edr_copy = workdir / (name + "-rebuilt-tpr.edr")
+    shutil.copyfile(rebuilt_edr, rebuilt_edr_copy)
 
     prefix = workdir / (name + "-archived-tpr")
     run(GMX, "mdrun", "-s", ROOT / "archived-eq.tpr", "-rerun", input_path,
         "-deffnm", prefix, "-ntmpi", "1", "-ntomp", "1",
         cwd=workdir, logfile=workdir / (name + "-archived-tpr.log"))
-    original_terms = edr_terms(Path(str(prefix) + ".edr"))
+    archived_edr = Path(str(prefix) + ".edr")
+    original_terms = edr_terms(archived_edr)
     return {
         "input_g96_sha256": digest(input_path.read_bytes()),
+        "rebuilt_tpr_edr_sha256": digest(rebuilt_edr_copy.read_bytes()),
+        "archived_production_tpr_edr_sha256": digest(archived_edr.read_bytes()),
+        "rerun_files_relative_to_reference_output": [
+            "reruns/" + name + ".g96",
+            "reruns/" + name + "-rebuilt-tpr.edr",
+            "reruns/" + name + "-archived-tpr.edr",
+        ],
         "archived_production_tpr_terms_kj_mol": original_terms,
         "rebuilt_singlepoint_tpr_terms_kj_mol": new_terms,
         "archived_minus_rebuilt_potential_kj_mol":
