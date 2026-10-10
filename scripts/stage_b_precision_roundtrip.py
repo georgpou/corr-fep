@@ -77,7 +77,8 @@ def write_mdp():
     for line in original.splitlines():
         match = re.match(r"^\s*([A-Za-z0-9_-]+)\s*=", line)
         if match:
-            key = match.group(1).lower()
+            # GROMACS normalizes underscore/hyphen aliases to the same MDP key.
+            key = match.group(1).lower().replace("_", "-")
             if key in ("nstxtcout", "unconstrained-start", "ld-seed"):
                 # Remove legacy trajectory keys and pre-existing thermostat seed;
                 # append one unambiguous ld-seed below, not a duplicate.
