@@ -37,7 +37,7 @@ MAX_EDR_BYTES = 8_000_000
 
 # The GROMACS potential-energy terms common to the original source and the
 # single-point run. Exact names are independently verified from each EDR.
-CORE = ("Bond", "Angle", "Proper Dih.", "Per. Imp. Dih.",
+CORE = ("Bond", "Angle", "Proper Dih.", "Improper Dih.", "Per. Imp. Dih.",
         "LJ-14", "Coulomb-14", "LJ (SR)", "Coulomb (SR)",
         "Coul. recip.", "Disper. corr.")
 BONDED = ("Bond", "Angle", "Proper Dih.", "Per. Imp. Dih.")
@@ -194,17 +194,19 @@ def main():
         archived = rerun["archived_production_tpr_terms_kj_mol"]
         rebuilt = rerun["rebuilt_singlepoint_tpr_terms_kj_mol"]
         original_keys, rerun_keys = set(edr), set(archived)
-        missing = (set(CORE) | {"Potential"}) - (original_keys & rerun_keys)
+        required = {"Bond", "Angle", "Potential"}
+        missing = required - (original_keys & rerun_keys)
         if missing:
-            raise AssertionError(
-                "Cannot decompose original MD and rerun comparably, missing: " +
-                repr(sorted(missing)))
+            raise AssertionError("Missing indispensable energy terms: " + repr(sorted(missing)))
         terms = {
             term: {
-                "original": float(edr[term][edr_idx]),
-                "rerun": float(archived[term]),
+                "original": float(edr[term][edr_idx]) if term in edr else 0.0,
+                "rerun": float(archived[term]) if term in archived else 0.0,
+                "original_term_present": term in edr,
+                "rerun_term_present": term in archived,
                 "rerun_minus_original": float(
-                    archived[term] - edr[term][edr_idx]),
+                    (archived[term] if term in archived else 0.0) -
+                    (edr[term][edr_idx] if term in edr else 0.0)),
             }
             for term in (*CORE, "Potential")
         }
@@ -230,6 +232,8 @@ def main():
                     terms["Angle"]["rerun_minus_original"]),
                 "original_edr_only_terms": sorted(original_keys-rerun_keys),
                 "rerun_only_terms": sorted(rerun_keys-original_keys),
+                "unequal_improper_dihedral_labels_not_assumed_equivalent": True,
+                "missing_term_convention": "Absent term contributes zero to the enumerated GROMACS EDR sum; this is an accounting convention, not a cross-version functional-form mapping",
             },
             "archived_tpr_minus_rebuilt_tpr_potential_kj_mol":
                 float(archived["Potential"] - rebuilt["Potential"]),
