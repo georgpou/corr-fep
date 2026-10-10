@@ -104,7 +104,7 @@ def main():
                          if v.file_size < 1500000 and not v.is_dir()]
             (out / "small_member_inventory.json").write_text(json.dumps(inventory, indent=2))
             structures = [v for v in selected
-                          if v.filename.lower().endswith("/eq/water/repeat-0/eqout.gro")]
+                          if v.filename.lower() == "lig_p38a_2g/eq/water/repeat-0/eqout.gro"]
             itps = [v for v in selected
                     if v.filename.lower() == "lig_p38a_2g/topology/merged.itp"]
             print("Candidate water structures:", [(v.filename,v.file_size) for v in structures], flush=True)
