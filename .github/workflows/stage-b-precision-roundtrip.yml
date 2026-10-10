@@ -6,6 +6,13 @@ on:
     paths:
       - "scripts/stage_b_precision_roundtrip.py"
       - ".github/workflows/stage-b-precision-roundtrip.yml"
+      - "scripts/stage_b_reference_energy.py"
+      - "scripts/stage_b_precision_roundtrip.py"
+      - "scripts/stage_b_original_edr_decomposition.py"
+      - "scripts/stage_b_mechanical_embedding.py"
+      - "scripts/stage_b_multiframe.py"
+      - "scripts/stage_b_qm_singlepoint.py"
+      - "scripts/inspect_zenodo_archive.py"
 permissions:
   contents: read
 jobs:
