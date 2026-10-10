@@ -2,7 +2,7 @@ name: Stage B2 - Molecular multiframe QM/MM
 on:
   workflow_dispatch:
   push:
-    branches: ["stage-b/multiframe-qmmm"]
+    branches: ["stage-b/multiframe-qmmm", "stage-b/frame-energy-discrepancies"]
     paths:
       - "scripts/stage_b_multiframe.py"
       - ".github/workflows/stage-b-multiframe.yml"
