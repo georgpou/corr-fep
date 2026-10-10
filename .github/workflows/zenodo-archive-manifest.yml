@@ -31,6 +31,7 @@ jobs:
           git rev-parse HEAD > archive-metadata/commit.txt
       - name: Read archive central directory (HTTP byte ranges only)
         run: |
+          set -o pipefail
           python scripts/inspect_zenodo_archive.py --output-dir archive-metadata \
             2>&1 | tee archive-metadata/index.log
       - name: Preserve inventory or failure evidence
