@@ -212,7 +212,7 @@ def gradient_probes(numbers, bohr, charge, gradient):
             numeric = (eplus - eminus) / (2*h)
             analytic = float(gradient[atom, axis])
             err = abs(numeric-analytic)
-            tests.append(dict(atom=atom, axis=axis, atomic_number=int(numbers[atom]),
+            tests.append(dict(atom=int(atom), axis=int(axis), atomic_number=int(numbers[atom]),
                               h_bohr=h, analytic_hartree_per_bohr=analytic,
                               finite_diff_hartree_per_bohr=numeric,
                               absolute_error_hartree_per_bohr=err))
