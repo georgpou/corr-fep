@@ -6,6 +6,13 @@ on:
     paths:
       - "scripts/stage_b_original_edr_decomposition.py"
       - ".github/workflows/stage-b-original-edr-decomposition.yml"
+      - "scripts/stage_b_reference_energy.py"
+      - "scripts/stage_b_precision_roundtrip.py"
+      - "scripts/stage_b_original_edr_decomposition.py"
+      - "scripts/stage_b_mechanical_embedding.py"
+      - "scripts/stage_b_multiframe.py"
+      - "scripts/stage_b_qm_singlepoint.py"
+      - "scripts/inspect_zenodo_archive.py"
 permissions:
   contents: read
 jobs:
@@ -87,6 +94,9 @@ jobs:
           if-no-files-found: warn
           path: |
             results/stage-b/original-edr-decomposition/
+            results/stage-b/reference-energy/deposited-ener.xvg
+            results/stage-b/reference-energy/reruns/*.g96
+            results/stage-b/reference-energy/reruns/*.edr
             results/stage-b/mechanical-embedding/*.log
             results/stage-b/mechanical-embedding/*.txt
             results/stage-b/mechanical-embedding/*.mdp
