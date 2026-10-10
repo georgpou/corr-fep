@@ -104,3 +104,32 @@ optimized mini-batch loss. Every sample evaluated with `u_B` is included
 in the target-evaluation counter. The config records the GitHub head SHA.
 The original objective, architecture, seeds, training samples, and
 optimization-step counts remain unchanged.
+
+## Corrected three-seed mode-region results
+
+The [corrected GitHub Actions execution](https://github.com/georgpou/corr-fep/actions/runs/38067083527)
+([mapped coordinates and diagnostic plots](https://github.com/georgpou/corr-fep/actions/runs/38067083527/artifacts/11675485417))
+passed on commit `e514af8f9092f457ccc2b11fe6762e09528a8e79`.
+The training results are unchanged because this correction only changes
+diagnostics, provenance and labels.
+
+At step 350, measured from **4,096 held-out mapped configurations** per seed:
+
+| Seed | Left halfspace | Left basin (2σ) | Right basin (2σ) | Outside both basins | Raw ESS | Δf (kBT) |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| 17 | 0.748 | 0.446 | 0.104 | 0.450 | 910.2 | 2.0776 |
+| 29 | 0.932 | 0.589 | 0.005 | 0.406 | 144.9 | 2.3754 |
+| 43 | 0.250 | 0.060 | 0.414 | 0.526 | 61.0 | 1.8970 |
+| Analytic target | 0.500 | ≈0.432 | ≈0.432 | ≈0.135 | — | 1.9633 |
+
+The near-mode occupancies are defined by fixed-radius disks and therefore
+should not be confused with mixture-component membership probabilities.
+The entries in each row's left-basin, right-basin and outside columns sum
+to one up to rounding. In the reference target mixture, the opposite-mode
+cross-contribution to either disk at separation ±5 is negligible.
+
+Seed 29's mapped samples underrepresent the right target basin severely,
+and seed 43 underrepresents the left basin. This supports **practical mode
+undercoverage** in the sampled maps as the training mean work decreases.
+It is not proof of a mathematical loss of full support, nor does it
+establish that the same failure mechanism appears in the QM/MM system.
