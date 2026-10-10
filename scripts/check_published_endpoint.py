@@ -48,33 +48,44 @@ def numeric_result(archive, phase, tensor_arrays):
 
     reference = np.concatenate([energy_from_xvg(archive, p) for p in energy_paths])
     indices = np.asarray(tensor_arrays["trajectory_sample_index"], dtype=np.int64).ravel()
-    if indices.size == 0 or np.any(indices < 0) or np.any(indices >= reference.size):
-        return {"status": "trajectory indices inconsistent with available reference data",
-                "n_reference": int(reference.size), "n_indices": int(indices.size),
-                "min_index": int(indices.min()) if indices.size else None,
-                "max_index": int(indices.max()) if indices.size else None}
-
-    potential = np.asarray(tensor_arrays["potential"], dtype=np.float64).ravel()
-    logdet = np.asarray(tensor_arrays["log_det_J"], dtype=np.float64).ravel()
-    if len(potential) != len(indices) or len(logdet) != len(indices):
-        return {"status": "tensor lengths do not match"}
-    work = (potential - logdet) * KT_KJ_PER_MOL - reference[indices]
+    if indices.size == 0 or np.any(indices < 0):
+        raise ValueError("Invalid archived trajectory indices")
+    # The archive has one 2,401-frame reference trajectory per phase, but
+    # TFEP saved 50,000 training values spanning all 25 repeats. Select ONLY
+    # mapped samples from repeat-0, which can be paired to actual FF energies.
+    # This 2,000-sample reweighting is NOT the paper's 50,000-sample result.
+    available = indices < len(reference)
+    subset_indices = indices[available]
+    potential_all = np.asarray(tensor_arrays["potential"], dtype=np.float64).ravel()
+    logdet_all = np.asarray(tensor_arrays["log_det_J"], dtype=np.float64).ravel()
+    if len(potential_all) != len(indices) or len(logdet_all) != len(indices):
+        raise ValueError("Tensor lengths do not match trajectory indices")
+    if subset_indices.size == 0:
+        return {"status": "no overlap between saved maps and available FF reference"}
+    work = (
+        (potential_all[available] - logdet_all[available]) * KT_KJ_PER_MOL
+        - reference[subset_indices]
+    )
     valid = np.isfinite(work)
     work = work[valid]
+    if len(work) == 0:
+        return {"status": "no finite mapped work for available repeat"}
     log_weights = -work / KT_KJ_PER_MOL
     log_total = logsumexp(log_weights)
     log_neff = 2 * log_total - logsumexp(2 * log_weights)
     return {
-        "status": "calculated from archived per-sample tensors and FF XVGs",
+        "status": "calculated using only repeat-0 FF energies and mapped training tensors; NOT the 25-repeat published result",
         "reference_files": energy_paths,
         "reference_samples": int(len(reference)),
+        "full_training_samples": int(len(indices)),
+        "first_repeat_candidate_samples": int(len(subset_indices)),
         "valid_samples": int(len(work)),
         "invalid_samples": int(len(valid) - valid.sum()),
         "delta_g_kj_mol": float(-KT_KJ_PER_MOL * (log_total - np.log(len(work)))),
         "work_std_kj_mol": float(np.std(work, ddof=1)),
         "raw_importance_ess": float(np.exp(log_neff)),
         "raw_importance_ess_fraction": float(np.exp(log_neff) / len(work)),
-        "note": "ESS ignores trajectory autocorrelation; work uses on-training-run multimap tensors."
+        "note": "The original trained-on multimap flow produces these values. ESS ignores trajectory autocorrelation. Not an independent held-out or new QM/MM calculation."
     }
 
 
@@ -110,12 +121,12 @@ def main():
                     "train_tensor_shapes": {
                         k: list(v.shape) for k, v in tensors.items()
                     },
-                    "independent_recalculation": numeric_result(archive, phase, tensors),
+                    "archived_repeat0_recalculation": numeric_result(archive, phase, tensors),
                 }
                 result["phases"][phase] = phase_result
                 print(phase, "published df:", published.get("df", {}).get("true"))
                 print(phase, "archive tensor shapes:", phase_result["train_tensor_shapes"])
-                print(phase, "recalculation:", phase_result["independent_recalculation"])
+                print(phase, "repeat0 recalculation:", phase_result["archived_repeat0_recalculation"])
 
     dest = output_dir / "p38a_2g-map00-cond35.json"
     dest.write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
