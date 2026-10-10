@@ -46,27 +46,46 @@ def read_pdb(data):
     return np.asarray(atoms, dtype=np.int32), np.asarray(positions, dtype=np.float64)
 
 
-def charge_from_itp(data):
-    """Read standard GROMACS atom charge column; fail rather than guess net charge."""
+def ligand_atoms_from_itp(data):
+    """Read ligand atom names, charges, masses from GROMACS [ atoms ]."""
     in_atoms = False
-    charges = []
+    rows = []
     for line in data.decode("utf-8").splitlines():
         row = line.split(";", 1)[0].strip()
         if row.startswith("["):
             in_atoms = bool(re.fullmatch(r"\[\s*atoms\s*\]", row, re.I))
             continue
         if in_atoms and row and not row.startswith("#"):
-            tokens = row.split()
-            if len(tokens) < 8:
-                raise ValueError(f"Malformed [ atoms ] entry: {row}")
-            charges.append(float(tokens[6]))
-    if not charges:
-        raise ValueError("No [ atoms ] charges found in ligand ITP")
-    total = sum(charges)
-    value = round(total)
-    if abs(total-value) > 0.02:
-        raise ValueError(f"Force-field net charge {total:.5f} not near integer")
-    return value, len(charges), total
+            parts = row.split()
+            if len(parts) >= 8 and parts[0].isdigit():
+                rows.append((parts[4], float(parts[6]), float(parts[7])))
+    return rows
+
+
+def atoms_from_gro(data):
+    """Read MOL residue atoms and nm coordinates, retaining source atom order."""
+    lines = data.decode("utf-8").splitlines()
+    n = int(lines[1].strip())
+    if len(lines) < n+3:
+        raise ValueError("Truncated archived GRO")
+    selected = []
+    for line in lines[2:2+n]:
+        if line[5:10].strip().upper() == "MOL":
+            name = line[10:15].strip()
+            coords = [float(line[k:k+8])*10 for k in (20, 28, 36)]
+            selected.append((name, coords))
+    if not selected:
+        raise ValueError("No residue named MOL in archived GRO structure")
+    return selected
+
+
+def atomic_number_from_mass(mass):
+    masses = {1: 1.008, 6: 12.011, 7: 14.007, 8: 15.999, 9: 18.998,
+              15: 30.974, 16: 32.06, 17: 35.45, 35: 79.904}
+    candidates = [z for z, reference in masses.items() if abs(mass-reference) < 0.25]
+    if len(candidates) != 1:
+        raise ValueError(f"Ambiguous element mass {mass}")
+    return candidates[0]
 
 
 def main():
@@ -84,31 +103,30 @@ def main():
             inventory = [{"name":v.filename,"bytes":v.file_size} for v in selected
                          if v.file_size < 1500000 and not v.is_dir()]
             (out / "small_member_inventory.json").write_text(json.dumps(inventory, indent=2))
-            pdbs = [v for v in selected if v.filename.lower().endswith("/mol_gmx.pdb")]
-            itps = [v for v in selected if v.filename.lower().endswith(".itp")
-                    and "lig" in v.filename.lower() and v.file_size < 1000000]
-            print("Candidate PDBs:", [(v.filename,v.file_size) for v in pdbs], flush=True)
-            print("Candidate ITPs:", [(v.filename,v.file_size) for v in itps], flush=True)
-            if len(pdbs) != 1:
-                raise RuntimeError(f"Require unique archived ligand mol_gmx.pdb, found {len(pdbs)}")
-            if not itps:
-                raise RuntimeError("No ligand ITP candidate; cannot verify net charge")
-            pdb = archive.read(pdbs[0])
-            numbers, angstrom = read_pdb(pdb)
-            charge_options = []
-            for member in itps:
-                try:
-                    q, count, total = charge_from_itp(archive.read(member))
-                    if count == len(numbers):
-                        charge_options.append((q,member.filename,total))
-                except (ValueError,UnicodeDecodeError):
-                    pass
-            if not charge_options:
-                raise RuntimeError("No ligand ITP with matching atom count/charge; refuse guessed charge")
-            if len(set(x[0] for x in charge_options)) != 1:
-                raise RuntimeError(f"Ambiguous ligand net charges: {charge_options}")
-            charge = charge_options[0][0]
-    # Atomic-order correspondence with ITP must still be checked before full QM/MM.
+            structures = [v for v in selected
+                          if v.filename.lower().endswith("/eq/water/repeat-0/eqout.gro")]
+            itps = [v for v in selected
+                    if v.filename.lower() == "lig_p38a_2g/topology/merged.itp"]
+            print("Candidate water structures:", [(v.filename,v.file_size) for v in structures], flush=True)
+            print("Candidate ligand topologies:", [(v.filename,v.file_size) for v in itps], flush=True)
+            if len(structures) != 1 or len(itps) != 1:
+                raise RuntimeError("Expected one water eqout.gro and one ligand merged.itp")
+            gro = archive.read(structures[0])
+            lig = atoms_from_gro(gro)
+            records = ligand_atoms_from_itp(archive.read(itps[0]))
+            print("GRO MOL atoms:", len(lig), "ITP atoms:", len(records), flush=True)
+            if len(lig) != len(records):
+                raise RuntimeError("Ligand GRO/ITP atom count mismatch")
+            for index, ((gro_name,_),(itp_name,_,_)) in enumerate(zip(lig,records)):
+                if gro_name != itp_name:
+                    raise RuntimeError(f"Atom order mismatch at {index}: {gro_name} vs {itp_name}")
+            net_charge = sum(row[1] for row in records)
+            charge = round(net_charge)
+            if abs(net_charge-charge) > 0.02:
+                raise RuntimeError(f"Nonintegral ligand topology net charge {net_charge}")
+            numbers = np.asarray([atomic_number_from_mass(mass) for _,_,mass in records], dtype=np.int32)
+            angstrom = np.asarray([coords for _,coords in lig], dtype=np.float64)
+            charge_options = [(charge, itps[0].filename, net_charge)]
     positions = angstrom / BOHR_ANGSTROM
     start = time.perf_counter()
     def calc_energy(x, gradient):
@@ -142,8 +160,8 @@ def main():
         "system":"p38a_2g ligand geometry from published archive (NOT full QM/MM)",
         "method":"GFN1-xTB", "embedding":"none: isolated ligand QM component",
         "charge":charge, "n_atoms":len(numbers),
-        "pdb_archive_member":pdbs[0].filename,
-        "pdb_sha256":hashlib.sha256(pdb).hexdigest(),
+        "gro_archive_member":structures[0].filename,
+        "gro_sha256":hashlib.sha256(gro).hexdigest(),
         "itp_charge_candidates":charge_options,
         "coordinate_units":"angstrom input -> bohr for tblite",
         "energy_hartree":energy, "energy_kj_mol":energy*HARTREE_KJMOL,
