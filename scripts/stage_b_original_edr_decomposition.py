@@ -246,6 +246,11 @@ def main():
                 "xtc_box_abc_nm": (cell[:3]/10).tolist(),
             },
             "g96_sha256": rerun["input_g96_sha256"],
+            "rebuilt_tpr_edr_sha256": rerun["rebuilt_tpr_edr_sha256"],
+            "archived_production_tpr_edr_sha256":
+                rerun["archived_production_tpr_edr_sha256"],
+            "rerun_files_relative_to_reference_output":
+                rerun["rerun_files_relative_to_reference_output"],
             "ligand_bond_range_angstrom": bond_limits,
         }
         report["frames"].append(entry)
