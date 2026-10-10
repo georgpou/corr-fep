@@ -27,6 +27,10 @@ from stage_b_qm_singlepoint import ARCHIVE, PREFIX, load_archive
 OUT = Path("results/stage-b/precision-roundtrip").resolve()
 NUM_STEPS = 1000
 WRITE_STEPS = 100
+# Independent, explicitly pinned RNG seeds for velocity initialization and
+# the stochastic v-rescale thermostat. Both must be fixed for rerun parity.
+VELOCITY_SEED = 1729
+THERMOSTAT_SEED = 271828
 # With dt=.0005 ps this gives a small 0.5 ps control trajectory, 11 frames.
 # This is NOT a statistically independent trajectory for free-energy inference.
 DT_PS = 0.0005
@@ -59,7 +63,8 @@ def write_mdp():
     original = (MDP_DIR / "singlepoint.mdp").read_text()
     overrides = {
         "integrator": "md", "nsteps": str(NUM_STEPS), "dt": str(DT_PS),
-        "gen-vel": "yes", "gen-temp": "298", "gen-seed": "1729",
+        "gen-vel": "yes", "gen-temp": "298",
+        "gen-seed": str(VELOCITY_SEED), "ld-seed": str(THERMOSTAT_SEED),
         "continuation": "no",
         "pcoupl": "no", "tcoupl": "v-rescale",
         "nstxout": str(WRITE_STEPS), "nstvout": "0", "nstfout": "0",
@@ -189,6 +194,10 @@ def main():
         "workflow_sha": os.environ.get("GITHUB_SHA", "local"),
         "gromacs_version": version,
         "nvt_mdp_sha256": digest(mdp.read_bytes()),
+        "control_rng": {
+            "velocity_initialization_gen_seed": VELOCITY_SEED,
+            "stochastic_v_rescale_ld_seed": THERMOSTAT_SEED,
+        },
         "nvt_tpr_sha256": digest(tpr.read_bytes()),
         "rebuilt_ff_tpr_sha256": digest((ROOT / "full.tpr").read_bytes()),
         "topology_members": topology, "upstream_commit": upstream["upstream_sha"],
