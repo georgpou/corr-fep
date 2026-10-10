@@ -1,6 +1,6 @@
 # Stage B2.2 — FF reference-energy alignment
 
-**Status: numerical acceptance pending scientific artifacts.**
+**Status: all three numerical B2.2 checks completed; latest source revisions and evidence-preservation changes require fresh workflow validation.**
 
 ## Objective
 Check the deposited repeat-0 `ener.xvg` potential definition and exact time alignment with selected XTC frames. Compare its numeric Potential values (kJ/mol) with the original archived dynamics TPR and the rebuilt GROMACS full-MM single-point TPR on identical coordinates.
@@ -34,7 +34,7 @@ The script `scripts/stage_b_precision_roundtrip.py` and workflow `.github/workfl
 
 This is a **mechanistic test on newly generated frames**, NOT restoration of the original full-precision TRR or a substitute for the original dataset. An exact numerical match between a new compressed-minus-uncompressed bias and the observed original residual would support compression as the dominant cause; matching only scale does not uniquely establish causation. No fitting, offset, flow training, or free-energy inference is permitted.
 
-**Status**: committed, numerical result pending GitHub Actions run https://github.com/georgpou/corr-fep/actions/runs/38091870934 . Inspect paired artifacts and document measured results before releasing PR #11 for review. Keep issue #9 open.
+**Status: completed successfully** in [run 38092197810](https://github.com/georgpou/corr-fep/actions/runs/38092197810) ([artifact 11684014638](https://github.com/georgpou/corr-fep/actions/runs/38092197810/artifacts/11684014638)). The 11-frame all-time mean includes the initial t=0 frame (only +0.2925 kJ/mol), whereas the **10 noninitial frames** give a **+263.338 kJ/mol** mean, with bond +231.793 and angle +38.019 kJ/mol. The JSON and CSV now explicitly distinguish these two summary populations. Keep issue #9 open.
 
 
 ## B2.2c completed: original deposited EDR decomposition (2026-10-11)
@@ -67,3 +67,7 @@ The original EDR reports `Improper Dih.` while the rebuilt rerun reports `Per. I
 The next method-design checkpoint is explicit definition of `U_FF(x)` **on exactly the coordinates used to evaluate `U_QMMM(x)`**. An internally consistent rerun of the complete classical reference potential on each deposited XTC configuration is preferable to pairing XTC QM/MM evaluations with the authors' original `ener.xvg` energies at higher-precision positions. This will define a computationally consistent correction observable, but because rounded XTC differs from the actual original trajectory and original sampling measure, **the resulting weights cannot automatically be claimed to reproduce the original TFEP estimator or unbiased free energies**.
 
 No flow training or free-energy results are asserted here. Keep scientific issue #9 open until the chosen consistent reference definition and its sampling implications are documented as a deliberate modeling decision. PR #11 remains unmerged pending user approval.
+
+## PR #11 independent review corrections
+
+After review, the method now preserves separately named rebuilt and archived GROMACS EDR files and the exact G96 inputs for each frame, with SHA-256 hashes and artifact inclusion. All three workflow push path filters include the scientific helper modules so changes to coordinate or energy evaluation code trigger reevaluation. The paired TRR/XTC precision result reports 11-frame and noninitial 10-frame statistics separately. The original EDR component summation is named **reported-term bookkeeping** rather than shared-term equality because 2021.6 and 2023.3 give different improper-dihedral labels. Documentation links above reference successful experimental runs, not historical setup failures. Latest rerun status must be checked on GitHub; these corrections do not retroactively validate new commits.
