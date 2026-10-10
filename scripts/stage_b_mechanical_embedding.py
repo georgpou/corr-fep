@@ -17,6 +17,7 @@ import subprocess
 
 import MDAnalysis as mda
 from MDAnalysis import transformations as trans
+from MDAnalysis.lib.distances import distance_array
 import numpy as np
 import pint
 import requests
@@ -350,14 +351,38 @@ def main():
     save_json("components.json", stage)
     print("Energy components:", json.dumps(stage["energies_kj_mol"]), flush=True)
 
-    # Mixed ligand elements and axes, plus one environment atom. Recompute
-    # the complete composite energy for each central difference, not a surrogate.
+    # Test all ligand elements and an independently selected strongly forced
+    # solvent coordinate at the ligand interface. A weak arbitrary solvent x
+    # component can produce a zero mixed-precision numerical derivative.
+    # Calculate ligand--environment proximity with the actual periodic box.
     probes = []
     for z in (1, 6, 7, 8, 9):
-        candidates = [int(i) for i in ligand_idx if numbers[np.where(ligand_idx == i)[0][0]] == z]
-        if candidates:
-            probes.append((candidates[0], (len(probes) % 3)))
-    probes.append((int(env_idx[0]), 0))
+        local = np.flatnonzero(numbers == z)
+        if len(local):
+            probes.append((int(ligand_idx[local[0]]), len(probes) % 3))
+    environment_distance = distance_array(
+        xyz[env_idx], xyz[ligand_idx], box=box).min(axis=1)
+    within_shell = env_idx[environment_distance < 4.5]
+    if not len(within_shell):
+        raise AssertionError("No solvent atom within 4.5 A of ligand; inspect coordinates")
+    # Use the maximum absolute Cartesian analytical gradient component,
+    # not a manually chosen atom or one selected using numerical derivatives.
+    shell_magnitude = np.abs(grad[within_shell])
+    best_shell_atom, best_shell_axis = np.unravel_index(
+        int(np.argmax(shell_magnitude)), shell_magnitude.shape)
+    solvent_atom = int(within_shell[best_shell_atom])
+    solvent_axis = int(best_shell_axis)
+    probes.append((solvent_atom, solvent_axis))
+    stage["environment_probe"] = {
+        "atom": solvent_atom,
+        "axis": solvent_axis,
+        "distance_to_nearest_ligand_angstrom":
+            float(environment_distance[np.where(env_idx == solvent_atom)[0][0]]),
+        "analytic_gradient_kj_mol_angstrom":
+            float(grad[solvent_atom, solvent_axis]),
+        "selection": "maximum absolute force component among environment atoms within 4.5 A of ligand",
+    }
+    save_json("components.json", stage)
     for atom, axis in probes:
         for h in (0.002, 0.005, 0.010):  # Angstrom; convergence and roundoff diagnostic
             plus = xyz.copy()
