@@ -38,13 +38,13 @@ In the *upstream* directory and validated upstream environment, start with the p
 ```bash
 # Execute from a checkout of the authors' repository, after installing compatible
 # dependencies and restoring the actual input-data directory tree.
-# Start with the ligand-only map/no environment shell conditioning.
+# Ligand-only mapped region, with the 0.0–3.5 Å environment shell conditioning.
 python run_tfep.py preprocess --ligand p38a_2g --phase water --mapcut 0.0 --condcut 3.5
 python run_tfep.py train --ligand p38a_2g --phase water --potential sqm
 python run_tfep.py estimate --ligand p38a_2g --phase water
 ```
 
-**Important correction**: the upstream docstring's `--potential dft` command invokes CPMD/MiMiC, **not** the paper's GFN1-xTB mechanical-embedding target. The actual `sqm` code calls `GROMACSPotential(full) - GROMACSPotential(ligand) + TBLitePotential(method='GFN1-xTB')`. Verify that the selected published figure/table uses the same mapped/conditioning settings before comparing numerically. These commands have **not been executed** with the published trajectories.
+**Important correction**: the upstream docstring's `--potential dft` command invokes CPMD/MiMiC, **not** the paper's GFN1-xTB mechanical-embedding target. The actual `sqm` code calls `GROMACSPotential(full) - GROMACSPotential(ligand) + TBLitePotential(method='GFN1-xTB')`. With the argparse CLI, omitting `--onlyref` sets `only_reference_conditioning=False` and uses the environment conditioning region. Adding `--onlyref` selects reference-frame atoms only. Use the same run configuration when comparing to the paper's results. These commands have **not been executed** with the published trajectories.
 
 The original preprocessing and data-loader code assume each repeat contains **2,401 frames (12 ns at 5 ps intervals)**; training discards the first 2 ns, leaving **2,000 frames per repeat**. The paper used 25 repeats (50,000 samples per ligand/phase), and its training used **one epoch with batch size 32**. Reducing the repeat count changes the estimator's sampling and does **not** constitute exact reproduction.
 
