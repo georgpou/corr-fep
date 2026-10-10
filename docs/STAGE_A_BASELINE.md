@@ -62,3 +62,32 @@ molecular problem.
 Next: once this baseline has produced inspectable cloud artifacts, test
 **one** training-loss modification at matched source samples, architecture,
 steps, and target evaluations.
+
+## First cloud execution (2026-10-10)
+
+[Successful Stage A CPU run](https://github.com/georgpou/corr-fep/actions/runs/38065373970)
+([full experiment artifact](https://github.com/georgpou/corr-fep/actions/runs/38065373970/artifacts/11674626734)), seed 17, 250 AdamW steps,
+2,048 independent held-out reference samples. Results are untrimmed:
+
+| Validation metric | Step 0 | Step 250 |
+| --- | ---: | ---: |
+| Raw importance ESS / 2,048 | 56.5247 | 2042.1550 |
+| Mean generalized work (kBT) | 5.80673 | 1.53468 |
+| Generalized-work SD (kBT) | 4.10718 | 0.05318 |
+| Delta f estimate (kBT) | 1.72541 | 1.53327 |
+| Abs. error from analytical Delta f (kBT) | 0.19276 | 0.0006105 |
+| Mean log Jacobian | 0 | -0.28662 |
+| SD log Jacobian | 0 | 0.00479 |
+
+Analytical Delta f = **1.53265690452503 kBT**. Forward/inverse coordinates
+agree within 3.1e-16 and the autograd determinant agrees with the logged
+Jacobian to 1.2e-16. The run evaluated the differentiable target for **109,056
+configurations**, including training and all diagnostics; the timed training
+plus diagnostics and plot generation took approximately one second excluding
+Python initialization, environment setup and installation. The numerical
+training is fast; startup dominates this particular GitHub Actions job.
+
+This is a **positive implementation check** on a tractable Gaussian. It is
+not an observed training pathology and is not evidence of an improved loss.
+The source sampling and target both have full Gaussian support, but finite
+held-out ESS is not a completeness guarantee for more difficult targets.
