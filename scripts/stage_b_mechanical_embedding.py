@@ -246,7 +246,7 @@ def main():
                              for k, v in raw.items()}, **archive_top},
         gromacs_version=vers,
         dependencies={key: importlib.metadata.version(key) for key in
-                      ("MDAnalysis", "numpy", "pint", "tblite", "torch", "tfep")},
+                      ("MDAnalysis", "numpy", "pint", "tblite", "torch", "tfep", "pyedr")},
         workflow_commit=os.environ.get("GITHUB_SHA", "local"),
         atom_count=int(len(xyz)),
         ligand_indices=[int(i) for i in ligand_idx],
@@ -302,7 +302,7 @@ def main():
             probes.append((candidates[0], (len(probes) % 3)))
     probes.append((int(env_idx[0]), 0))
     for atom, axis in probes:
-        for h in (0.002, 0.005):  # Angstrom, assess float-precision effects
+        for h in (0.002, 0.005, 0.010):  # Angstrom; convergence and roundoff diagnostic
             plus = xyz.copy()
             minus = xyz.copy()
             plus[atom, axis] += h
@@ -319,11 +319,22 @@ def main():
             stage["finite_difference_checks"].append(item)
             save_json("components.json", stage)
             print("FD_PROBE", json.dumps(item), flush=True)
-            if err > 4.0:
+            # The 0.002 A probe diagnoses single-precision energy quantization;
+            # acceptance is judged using the better-conditioned 0.005 and 0.010 A steps.
+            if h >= 0.005 and err > 0.8:
                 raise AssertionError("Combined QM/MM derivative mismatch; "
                                      + json.dumps(item))
     stage["max_fd_abs_error_kj_mol_angstrom"] = max(
         t["abs_error_kj_mol_angstrom"] for t in stage["finite_difference_checks"])
+    stage["max_fd_error_by_h_kj_mol_angstrom"] = {
+        str(h): max(t["abs_error_kj_mol_angstrom"] for t in stage["finite_difference_checks"]
+                    if t["h_angstrom"] == h)
+        for h in (0.002, 0.005, 0.010)
+    }
+    stage["precision_limitation"] = (
+        "GROMACS 2023.3 Ubuntu uses single precision; smaller finite difference steps "
+        "are susceptible to absolute energy quantization. Do not claim 2021.6 double equivalence."
+    )
     stage["validated"] = True
     save_json("components.json", stage)
     print("B1_MECHANICAL_EMBEDDING_VALIDATED", flush=True)
