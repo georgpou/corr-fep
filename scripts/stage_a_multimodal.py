@@ -4,6 +4,7 @@ import argparse
 import csv
 import json
 import math
+import os
 from pathlib import Path
 import time
 
@@ -42,9 +43,20 @@ def evaluate(flow, target, x, step, split):
     work = (target(y) - reference_potential(x) - logj).numpy()
     jac = logj.numpy()
     stats = summarize_work(work)
-    # Half spaces x<0 and x>=0 partition target equally by symmetry.
-    # Unlike ESS, mapped occupancy detects an absent target mode.
-    left_fraction = float((y[:, 0] < 0).double().mean())
+    # The half-space split alone does not establish residence in either mode.
+    # Two non-overlapping disks (radius 2*sigma) also count configurations
+    # genuinely near each target peak, or outside *both* peak regions.
+    left_halfspace_fraction = float((y[:, 0] < 0).double().mean())
+    radius = 2.0 * target.sigma
+    distance_squared = ((y[:, None, :] - target.centers[None, :, :]) ** 2).sum(-1)
+    near_left = distance_squared[:, 0] <= radius**2
+    near_right = distance_squared[:, 1] <= radius**2
+    if torch.any(near_left & near_right).item():
+        raise ValueError("Mode regions overlap: the diagnostic requires separated modes.")
+    left_mode_fraction = float(near_left.double().mean())
+    right_mode_fraction = float(near_right.double().mean())
+    outside_mode_fraction = float((~(near_left | near_right)).double().mean())
+    assert abs(left_mode_fraction + right_mode_fraction + outside_mode_fraction - 1) < 1e-12
     result = {
         "step": step, "split": split, **stats,
         "df_error": stats["delta_f_reduced"] - target.exact_df,
@@ -53,11 +65,14 @@ def evaluate(flow, target, x, step, split):
         "jac_min": float(jac.min()), "jac_max": float(jac.max()),
         "jac_p01": float(np.quantile(jac, 0.01)),
         "jac_p99": float(np.quantile(jac, 0.99)),
-        "mapped_left_fraction": left_fraction,
-        "mapped_mode_imbalance": abs(left_fraction - 0.5),
-        "target_log_density_at_mode": float(-target(target.centers[:1]).item()),
+        "mapped_left_halfspace_fraction": left_halfspace_fraction,
+        "mapped_halfspace_imbalance": abs(left_halfspace_fraction - 0.5),
+        "mapped_left_mode_fraction": left_mode_fraction,
+        "mapped_right_mode_fraction": right_mode_fraction,
+        "mapped_outside_mode_fraction": outside_mode_fraction,
+        "mode_region_radius": radius,
     }
-    return result, work
+    return result, work, y.numpy()
 
 
 def single_experiment(args, seed, out):
@@ -74,23 +89,27 @@ def single_experiment(args, seed, out):
     rows, losses = [], []
     last_grad_norm = None
     initial_work, final_work = None, None
+    initial_mapped, final_mapped = None, None
     t0 = time.perf_counter()
 
     for step in range(args.steps + 1):
         if step % args.eval_every == 0 or step == args.steps:
             for name, x in [("train", train), ("validation", validation)]:
-                row, work = evaluate(flow, target, x, step, name)
+                row, work, mapped = evaluate(flow, target, x, step, name)
                 row["grad_norm"] = last_grad_norm
                 rows.append(row)
                 if name == "validation":
                     if initial_work is None:
-                        initial_work = work
-                    final_work = work
+                        initial_work, initial_mapped = work, mapped
+                    final_work, final_mapped = work, mapped
             v = rows[-1]
-            print(f"seed={seed} step={step} train_loss={rows[-2]['mean_work_reduced']:.4f} "
+            print(f"seed={seed} step={step} train_mean_w={rows[-2]['mean_work_reduced']:.4f} "
                   f"val_ess={v['importance_ess']:.1f}/{v['n']} "
                   f"val_df={v['delta_f_reduced']:.4f} target_df={target.exact_df:.4f} "
-                  f"left={v['mapped_left_fraction']:.3f}", flush=True)
+                  f"left_halfspace={v['mapped_left_halfspace_fraction']:.3f} "
+                  f"left_mode={v['mapped_left_mode_fraction']:.3f} "
+                  f"right_mode={v['mapped_right_mode_fraction']:.3f} "
+                  f"outside={v['mapped_outside_mode_fraction']:.3f}", flush=True)
 
         if step == args.steps:
             break
@@ -125,15 +144,15 @@ def single_experiment(args, seed, out):
         ("loss.png", "mean_work_reduced", "Mean generalized work (kBT)"),
         ("ess.png", "importance_ess_fraction", "Raw ESS fraction"),
         ("jacobian.png", "jac_std", "SD of log |det J|"),
-        ("mode_coverage.png", "mapped_left_fraction", "Mapped left-mode fraction"),
+        ("halfspace_balance.png", "mapped_left_halfspace_fraction", "Mapped left-halfspace fraction"),
         ("free_energy.png", "df_error", "Estimated Delta f - exact (kBT)"),
     ]:
         fig, ax = plt.subplots(figsize=(6, 4))
         for split in ("train", "validation"):
             r = [v for v in rows if v["split"] == split]
             ax.plot([v["step"] for v in r], [v[metric] for v in r], label=split)
-        if file == "mode_coverage.png":
-            ax.axhline(0.5, color="black", linestyle="--", label="Target fraction")
+        if file == "halfspace_balance.png":
+            ax.axhline(0.5, color="black", linestyle="--", label="Target halfspace fraction")
         elif file == "free_energy.png":
             ax.axhline(0, color="black", linestyle="--", label="Exact")
         ax.set_xlabel("Optimizer step")
@@ -142,6 +161,50 @@ def single_experiment(args, seed, out):
         fig.tight_layout()
         fig.savefig(out / file, dpi=140)
         plt.close(fig)
+
+    # Mode-basin occupancy is *not* the same as left/right halfspace balance.
+    # For well-separated 2D Gaussians, the 2*sigma disk contains 1-exp(-2)
+    # of its own component. Contributions from the opposite peak are negligible.
+    fig, ax = plt.subplots(figsize=(6, 4))
+    for metric, label in [
+        ("mapped_left_mode_fraction", "Near left mode"),
+        ("mapped_right_mode_fraction", "Near right mode"),
+        ("mapped_outside_mode_fraction", "Outside both"),
+    ]:
+        r = [v for v in rows if v["split"] == "validation"]
+        ax.plot([v["step"] for v in r], [v[metric] for v in r], label=label)
+    expected_per_mode = 0.5 * (1 - math.exp(-2))
+    ax.axhline(expected_per_mode, color="gray", linestyle="--",
+               label="Target near each mode (approx.)")
+    ax.axhline(math.exp(-2), color="black", linestyle=":",
+               label="Target outside (approx.)")
+    ax.set_xlabel("Optimizer step")
+    ax.set_ylabel("Held-out mapped fraction")
+    ax.legend(fontsize=8)
+    fig.tight_layout()
+    fig.savefig(out / "mode_coverage.png", dpi=140)
+    plt.close(fig)
+
+    # Save data as well as a visual check so halfspace imbalance cannot be
+    # mistaken for actual occupancy of the high-probability target basins.
+    fig, axes = plt.subplots(1, 2, figsize=(10, 4), sharex=True, sharey=True)
+    for ax, mapped, name in [
+        (axes[0], initial_mapped, "Before training"),
+        (axes[1], final_mapped, "After training"),
+    ]:
+        ax.scatter(mapped[:, 0], mapped[:, 1], s=3, alpha=0.2, rasterized=True)
+        for center in target.centers.numpy():
+            ax.scatter(center[0], center[1], s=50, marker="x", color="black")
+            ax.add_patch(plt.Circle(center, 2 * target.sigma, color="black",
+                                    fill=False, linestyle="--"))
+        ax.set_title(name)
+        ax.set_xlabel("Mapped x")
+        ax.set_xlim(-args.separation - 3, args.separation + 3)
+        ax.set_ylim(-4, 4)
+    axes[0].set_ylabel("Mapped y")
+    fig.tight_layout()
+    fig.savefig(out / "mapped_positions.png", dpi=140)
+    plt.close(fig)
 
     fig, ax = plt.subplots(figsize=(6, 4))
     ax.hist(initial_work, bins=70, density=True, alpha=0.5, label="initial")
@@ -152,7 +215,9 @@ def single_experiment(args, seed, out):
     fig.savefig(out / "work_distribution.png", dpi=140)
     plt.close(fig)
     np.savez_compressed(out / "validation_work.npz",
-                        initial=initial_work, final=final_work)
+                        initial=initial_work, final=final_work,
+                        source_validation=validation.numpy(),
+                        mapped_initial=initial_mapped, mapped_final=final_mapped)
 
     first = next(r for r in rows if r["split"] == "validation")
     last = next(r for r in reversed(rows) if r["split"] == "validation")
@@ -181,11 +246,15 @@ def main():
     parser.add_argument("--separation", type=float, default=5.0)
     parser.add_argument("--sigma", type=float, default=0.7)
     args = parser.parse_args()
+    if args.sigma <= 0 or args.separation <= 2 * args.sigma:
+        parser.error("Require sigma > 0 and separation > 2*sigma for disjoint mode disks.")
     torch.set_num_threads(1)
     args.out.mkdir(parents=True, exist_ok=True)
     (args.out / "config.json").write_text(json.dumps({
         **vars(args), "out": str(args.out),
         "tfep_commit": "0bc369a1194c688bb6ac997cc6b7c2db2b063c9e",
+        "repo_commit": os.environ.get("GITHUB_SHA", "local"),
+        "mode_diagnostic": "Euclidean disks radius 2*sigma around each mode",
         "units": "reduced kBT",
         "note": "Original objective only. No regularizer or architecture comparison.",
     }, indent=2, allow_nan=False))
