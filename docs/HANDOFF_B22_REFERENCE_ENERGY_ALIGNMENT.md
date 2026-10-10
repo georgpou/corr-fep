@@ -1,5 +1,7 @@
 # Corr-FEP — Agent handoff: Stage B2.2 reference-energy and coordinate-precision audit
 
+> **Historical handoff, written 2026-10-10; superseded.** The statement below that B2.2 was not validated describes the state *when this handoff was written*. The B2.2a/b/c scientific checks subsequently passed. For current methods, run links, remaining limits, and PR #11 review state, consult [the completed Stage B2.2 audit](STAGE_B_REFERENCE_ENERGY.md). This document is retained as a dated research handoff, not an up-to-date status report.
+
 **Date:** 2026-10-10
 **Repository:** https://github.com/georgpou/corr-fep
 **Base / merged main SHA:** `12d34abd32ea3f7312b0f7bd98c065046ec833df`
