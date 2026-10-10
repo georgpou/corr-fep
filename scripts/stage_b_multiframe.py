@@ -191,10 +191,32 @@ def check_terminal_alignment(universe, reference_xyz, ligand_indices, reference_
         "environment_nearest_ligand_distance_rms_difference_angstrom": float(np.sqrt(np.mean((env_xtc-env_ref)**2))),
         "translation_applied_to_energy_inputs": False,
     }
+    residual_norm = np.linalg.norm(corrected_delta, axis=1)
+    largest = np.argsort(residual_norm)[-10:][::-1]
+    results["displacement_counts"] = {
+        "above_0.001_angstrom": int(np.count_nonzero(residual_norm > 0.001)),
+        "above_0.005_angstrom": int(np.count_nonzero(residual_norm > 0.005)),
+    }
+    results["largest_atom_residuals"] = [
+        {
+            "atom_index": int(i),
+            "name": str(universe.atoms[int(i)].name),
+            "type": str(universe.atoms[int(i)].type),
+            "resid": int(universe.atoms[int(i)].resid),
+            "resname": str(universe.atoms[int(i)].resname),
+            "reference_xyz_angstrom": reference_xyz[int(i)].tolist(),
+            "xtc_xyz_angstrom": terminal[int(i)].tolist(),
+            "minimum_image_delta_angstrom": raw_delta[int(i)].tolist(),
+            "post_registration_delta_angstrom": corrected_delta[int(i)].tolist(),
+            "post_registration_norm_angstrom": float(residual_norm[int(i)]),
+        }
+        for i in largest
+    ]
     return results, terminal, box
 
 
-def same_tpr_endpoint_energy_comparison(model, reference_xyz, reference_box, terminal, terminal_box):
+def same_tpr_endpoint_energy_comparison(model, reference_xyz, reference_box,
+                                        terminal, terminal_box, alignment):
     """Compare GRO and XTC on one compiled TPR and one GROMACS runtime."""
     def components(xyz, box):
         with torch.no_grad():
@@ -207,12 +229,33 @@ def same_tpr_endpoint_energy_comparison(model, reference_xyz, reference_box, ter
 
     reference = components(reference_xyz, reference_box)
     xtc = components(terminal, terminal_box)
-    return {
+    comparison = {
         "procedure": "identical generated full/ligand TPRs and engine/runtime, individually transformed GRO and terminal XTC; no coordinate translation applied",
         "gro_kj_mol": reference,
         "xtc_kj_mol": xtc,
         "xtc_minus_gro_kj_mol": {k: xtc[k] - reference[k] for k in reference},
     }
+    # Diagnostic-only hybrid configuration: replace just the exceptional
+    # coordinate(s) to test their causal contribution to the energy gap.
+    # This is NOT an archived frame and must never enter training.
+    outliers = [item["atom_index"] for item in alignment["largest_atom_residuals"]
+                if item["post_registration_norm_angstrom"] > 0.001]
+    if alignment["displacement_counts"]["above_0.001_angstrom"] != len(outliers):
+        raise AssertionError("Too many coordinate outliers for this focused probe")
+    if outliers:
+        hybrid = terminal.copy()
+        hybrid[outliers] = reference_xyz[outliers]
+        counterfactual = components(hybrid, terminal_box)
+        comparison["outlier_coordinate_replacement"] = {
+            "purpose": "energy sensitivity only; hybrid is not a production frame",
+            "replaced_atom_indices": outliers,
+            "energies_kj_mol": counterfactual,
+            "hybrid_minus_xtc_kj_mol": {
+                k: counterfactual[k] - xtc[k] for k in reference},
+            "hybrid_minus_gro_kj_mol": {
+                k: counterfactual[k] - reference[k] for k in reference},
+        }
+    return comparison
 
 
 def complete_gradient_fd(model, xyz, cell, grad, ligand_indices):
@@ -365,7 +408,7 @@ def main():
     result["xtc_gro_alignment"] = alignment
     write_summary(result)
     result["endpoint_same_tpr_energy_comparison"] = same_tpr_endpoint_energy_comparison(
-        model, reference_xyz, reference_box, terminal_xyz, terminal_box)
+        model, reference_xyz, reference_box, terminal_xyz, terminal_box, alignment)
     write_summary(result)
     print("ENDPOINT_CORRESPONDENCE", json.dumps(alignment, allow_nan=False), flush=True)
     print("ENDPOINT_ENERGIES", json.dumps(result["endpoint_same_tpr_energy_comparison"], allow_nan=False), flush=True)
