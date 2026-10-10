@@ -9,6 +9,7 @@ import hashlib
 import importlib.metadata
 import json
 import os
+import re
 from pathlib import Path
 import time
 
@@ -24,7 +25,7 @@ from stage_b_mechanical_embedding import (
     prepare_files, retrieve_topology, run, setup_coordinates,
 )
 from stage_b_qm_singlepoint import (
-    ARCHIVE, PREFIX, load_archive, BOHR_PER_ANGSTROM,
+    ARCHIVE, PREFIX, GRO_NAME, load_archive, BOHR_PER_ANGSTROM,
     HARTREE_KJMOL, direct_singlepoint,
 )
 
@@ -66,6 +67,16 @@ def load_trajectory():
     }
 
 
+def register_trajectory_transformations(universe, ligand_indices):
+    """Apply the same coordinates convention as setup_coordinates BEFORE auditing."""
+    ligand = universe.select_atoms("resname MOL")
+    environment = universe.select_atoms("not resname MOL")
+    if not np.array_equal(ligand.indices, ligand_indices):
+        raise AssertionError("XTC and GRO ligand topology indices differ")
+    universe.trajectory.add_transformations(
+        trans.unwrap(ligand), trans.center_in_box(ligand), trans.wrap(environment))
+
+
 def sampled_frames(universe, ligand_indices, reference_xyz):
     """Yield transformed coordinates and boxes after topology/geometry validation."""
     ligand = universe.select_atoms("resname MOL")
@@ -81,8 +92,7 @@ def sampled_frames(universe, ligand_indices, reference_xyz):
                         for i, j in ligand.bonds.indices], dtype=int)
     if len(bonds) == 0:
         raise AssertionError("Missing ligand bonds")
-    universe.trajectory.add_transformations(
-        trans.unwrap(ligand), trans.center_in_box(ligand), trans.wrap(environment))
+    # Transformations were registered before the XTC/GRO correspondence audit.
     n_frames = len(universe.trajectory)
     if n_frames - PRODUCTION_START < SAMPLE_COUNT:
         raise RuntimeError(f"Only {n_frames - PRODUCTION_START} production frames")
@@ -113,40 +123,96 @@ def sampled_frames(universe, ligand_indices, reference_xyz):
         ]
 
 
-def check_terminal_alignment(universe, reference_xyz, ligand_indices, reference_box):
-    """Independent positional anchor: XTC endpoint versus deposited GRO snapshot.
+def check_terminal_alignment(universe, reference_xyz, ligand_indices, reference_box, gro_title):
+    """Audit equivalent coordinate representations without changing energy inputs.
 
-    This check does not assume identity of the coordinates: distinct or lossy
-    snapshots are a recorded observation, not silently treated as identical.
+    Both trajectories must already have undergone the same unwrap/center/wrap
+    operations. Minimum-image distances alone do not remove a common origin
+    shift, so record the original and best-registered residuals separately.
     """
-    from MDAnalysis.lib.distances import minimize_vectors
+    from MDAnalysis.lib.distances import minimize_vectors, distance_array
+
     ts = universe.trajectory[-1]
     terminal = np.asarray(universe.atoms.positions, dtype=np.float64).copy()
-    box = np.asarray(ts.dimensions, dtype=np.float64)
+    box = np.asarray(ts.dimensions, dtype=np.float64).copy()
     if terminal.shape != reference_xyz.shape:
         raise AssertionError("Terminal XTC and GRO have different atom counts")
-    if not np.allclose(box, reference_box, rtol=0, atol=0.01):
-        raise AssertionError("Terminal XTC/GRO periodic boxes differ")
-    displacement = minimize_vectors(terminal - reference_xyz, box)
-    norms = np.linalg.norm(displacement, axis=1)
-    ligand_mask = np.zeros(len(norms), dtype=bool)
+
+    raw_delta = minimize_vectors(terminal - reference_xyz, box)
+    shift = np.median(raw_delta, axis=0)
+    corrected_delta = minimize_vectors(terminal - reference_xyz - shift, box)
+    ligand_mask = np.zeros(len(terminal), dtype=bool)
     ligand_mask[ligand_indices] = True
+
+    def metrics(delta):
+        norm = np.linalg.norm(delta, axis=1)
+        def rms(subset):
+            return float(np.sqrt(np.mean(norm[subset]**2)))
+        return {
+            "mean_vector_angstrom": np.mean(delta, axis=0).tolist(),
+            "median_vector_angstrom": np.median(delta, axis=0).tolist(),
+            "vector_std_angstrom": np.std(delta, axis=0).tolist(),
+            "rms_displacement_angstrom": rms(slice(None)),
+            "max_displacement_angstrom": float(norm.max()),
+            "ligand_rms_angstrom": rms(ligand_mask),
+            "ligand_max_angstrom": float(norm[ligand_mask].max()),
+            "environment_rms_angstrom": rms(~ligand_mask),
+            "environment_max_angstrom": float(norm[~ligand_mask].max()),
+        }
+
+    # Periodic interatomic distances are translation invariant; check them
+    # independently of the per-atom registration. Atom ordering is from TPR.
+    ligand_ref = reference_xyz[ligand_indices]
+    ligand_xtc = terminal[ligand_indices]
+    pair_reference = distance_array(ligand_ref, ligand_ref, box=reference_box)
+    pair_terminal = distance_array(ligand_xtc, ligand_xtc, box=box)
+    environment_indices = np.flatnonzero(~ligand_mask)
+    env_ref = distance_array(
+        reference_xyz[environment_indices], ligand_ref, box=reference_box).min(axis=1)
+    env_xtc = distance_array(
+        terminal[environment_indices], ligand_xtc, box=box).min(axis=1)
+
+    gro_time = re.search(r"\\bt\\s*=\\s*([-+]?\\d+(?:\\.\\d+)?)", gro_title)
     results = {
-        "reference_assumption": "XTC terminal frame and archived eqout.gro correspond to the same time; positional comparison tests this",
+        "comparison": "same archive TPR atom order, GRO and XTC independently loaded; each transformed using unwrap(ligand), center_in_box(ligand), wrap(environment)",
+        "gro_title": gro_title,
+        "gro_title_time_ps": float(gro_time.group(1)) if gro_time else None,
+        "terminal_frame_index": int(ts.frame),
         "terminal_time_ps": float(ts.time),
+        "atom_count": len(terminal),
         "terminal_box_angstrom_degrees": box.tolist(),
         "gro_box_angstrom_degrees": reference_box.tolist(),
-        "rms_displacement_angstrom": float(np.sqrt(np.mean(norms**2))),
-        "max_displacement_angstrom": float(norms.max()),
-        "ligand_rms_displacement_angstrom": float(np.sqrt(np.mean(norms[ligand_mask]**2))),
-        "environment_rms_displacement_angstrom": float(np.sqrt(np.mean(norms[~ligand_mask]**2))),
+        "box_max_abs_difference_angstrom_degrees": float(np.max(np.abs(box - reference_box))),
+        "before_translation": metrics(raw_delta),
+        "robust_common_translation_angstrom": shift.tolist(),
+        "after_translation": metrics(corrected_delta),
+        "ligand_pair_distance_max_abs_difference_angstrom": float(np.max(np.abs(pair_terminal - pair_reference))),
+        "environment_nearest_ligand_distance_max_abs_difference_angstrom": float(np.max(np.abs(env_xtc - env_ref))),
+        "environment_nearest_ligand_distance_rms_difference_angstrom": float(np.sqrt(np.mean((env_xtc-env_ref)**2))),
+        "translation_applied_to_energy_inputs": False,
     }
-    # A wrong trajectory pairing should not be accepted just because XTC
-    # and GRO both have the expected atom count. Tight enough to flag
-    # neighboring frames, loose enough for compressed XTC/GRO rounding.
-    if results["rms_displacement_angstrom"] > 0.05 or results["max_displacement_angstrom"] > 0.3:
-        raise AssertionError("Terminal XTC/GRO positional mismatch: " + json.dumps(results))
-    return results
+    return results, terminal, box
+
+
+def same_tpr_endpoint_energy_comparison(model, reference_xyz, reference_box, terminal, terminal_box):
+    """Compare GRO and XTC on one compiled TPR and one GROMACS runtime."""
+    def components(xyz, box):
+        with torch.no_grad():
+            x = torch.tensor(xyz.reshape(1, -1), dtype=torch.float64)
+            cell = torch.tensor(box.reshape(1, 6), dtype=torch.float64)
+            vals = [float(t.item()) for t in model.components(x, cell)]
+        return {"mm_full": vals[0], "mm_ligand": vals[1],
+                "qm_ligand_gfn1xtb": vals[2],
+                "qmmm_combined": vals[0] - vals[1] + vals[2]}
+
+    reference = components(reference_xyz, reference_box)
+    xtc = components(terminal, terminal_box)
+    return {
+        "procedure": "identical generated full/ligand TPRs and engine/runtime, individually transformed GRO and terminal XTC; no coordinate translation applied",
+        "gro_kj_mol": reference,
+        "xtc_kj_mol": xtc,
+        "xtc_minus_gro_kj_mol": {k: xtc[k] - reference[k] for k in reference},
+    }
 
 
 def complete_gradient_fd(model, xyz, cell, grad, ligand_indices):
@@ -265,11 +331,10 @@ def main():
             r"^\s*Precision:\s+double\b", gromacs_version, flags=__import__("re").M | __import__("re").I):
         raise RuntimeError("Must use double-precision GROMACS")
     grompp()
-    initial = mda.Universe(str(ROOT / "archived-eq.tpr"), str(ROOT / "archived-eqout.gro"))
     universe = mda.Universe(str(ROOT / "archived-eq.tpr"), str(trajectory_path))
-    # XTC does not contain names or types. Both Universe instances would
-    # inherit identical metadata from the same TPR, so comparing it is vacuous.
-    # Use actual coordinate correspondence as the independent alignment check.
+    # The previous check compared an untransformed XTC to a processed GRO:
+    # sampled_frames installed the transformations only AFTER alignment.
+    register_trajectory_transformations(universe, ligand_idx)
     model = MechanicalEmbedding(ligand_idx, numbers, reference_box)
     result = {
         "checkpoint": "B2.1, genuine molecular multiframe QM/MM feasibility only",
@@ -294,8 +359,23 @@ def main():
         "frames": [], "validated": False,
     }
     # Keep GRO/XTC discrepancy for high-priority issue #9 investigation.
-    result["xtc_gro_alignment"] = check_terminal_alignment(universe, reference_xyz, ligand_idx, reference_box)
+    alignment, terminal_xyz, terminal_box = check_terminal_alignment(
+        universe, reference_xyz, ligand_idx, reference_box,
+        raw[GRO_NAME].decode("utf-8").splitlines()[0])
+    result["xtc_gro_alignment"] = alignment
     write_summary(result)
+    result["endpoint_same_tpr_energy_comparison"] = same_tpr_endpoint_energy_comparison(
+        model, reference_xyz, reference_box, terminal_xyz, terminal_box)
+    write_summary(result)
+    print("ENDPOINT_CORRESPONDENCE", json.dumps(alignment, allow_nan=False), flush=True)
+    print("ENDPOINT_ENERGIES", json.dumps(result["endpoint_same_tpr_energy_comparison"], allow_nan=False), flush=True)
+    residual = alignment["after_translation"]
+    if (alignment["box_max_abs_difference_angstrom_degrees"] > 0.01 or
+        residual["rms_displacement_angstrom"] > 0.05 or
+        residual["max_displacement_angstrom"] > 0.3 or
+        alignment["ligand_pair_distance_max_abs_difference_angstrom"] > 0.05 or
+        alignment["environment_nearest_ligand_distance_max_abs_difference_angstrom"] > 0.3):
+        raise AssertionError("XTC/GRO correspondence not established; inspect saved alignment + same-TPR energy evidence")
     gradient_arrays = {}
     for frame_index, count, time_ps, xyz, box, bond_range in sampled_frames(
             universe, ligand_idx, reference_xyz):
