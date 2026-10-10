@@ -11,6 +11,9 @@ FIELDS = [
     "mapped_left_mode_fraction", "mapped_right_mode_fraction",
     "mapped_outside_mode_fraction", "jac_mean", "jac_std", "jac_min", "jac_max",
     "jac_p01", "jac_p99", "grad_norm",
+    "weighted_left_mode_fraction", "weighted_right_mode_fraction",
+    "weighted_outside_mode_fraction", "weighted_left_halfspace_fraction",
+    "max_normalized_weight",
 ]
 
 
@@ -36,8 +39,17 @@ def main():
             t = s["final_test"]
             if t is None or t["n"] != 8192:
                 raise ValueError("Independent final test missing or incorrect size")
+            with (root / name / f"seed-{seed}" / "batch_losses.csv").open() as f:
+                batch = list(csv.DictReader(f))
+            with (root / name / f"seed-{seed}" / "metrics.csv").open() as f:
+                history = list(csv.DictReader(f))
+            final_training_row = next(r for r in reversed(history) if
+                                      r["split"] == "train")
             rows.append({
                 "seed": seed, "objective": name,
+                "batch_loss_last": float(batch[-1]["batch_loss"]),
+                "train_mean_work": float(final_training_row["mean_work_reduced"]),
+                "validation_mean_work": s["final_validation"]["mean_work_reduced"],
                 "abs_df_error": abs(t["df_error"]),
                 "target_evaluations": s["target_evaluations"],
                 "optimizer_steps": s["optimizer_steps"],
@@ -68,6 +80,39 @@ def main():
             f"{r['mapped_right_mode_fraction']:.3f} | "
             f"{r['mapped_outside_mode_fraction']:.3f} | "
             f"{r['target_evaluations']} | {r['training_s']:.2f} |"
+        )
+    lines += [
+
+        "",
+        "## Reweighted target-region probabilities (not raw mapped occupancy)",
+        "",
+        "| Seed | Objective | Weighted left | Weighted right | Weighted outside | Max normalized weight |",
+        "| --- | --- | ---: | ---: | ---: | ---: |",
+    ]
+    for r in rows:
+        lines.append(
+            f"| {r['seed']} | {r['objective']} | "
+            f"{r['weighted_left_mode_fraction']:.3f} | "
+            f"{r['weighted_right_mode_fraction']:.3f} | "
+            f"{r['weighted_outside_mode_fraction']:.3f} | "
+            f"{r['max_normalized_weight']:.5f} |"
+        )
+    lines += [
+        "",
+        "## Optimization, work and Jacobian diagnostics",
+        "",
+        "| Seed | Objective | Last minibatch loss | Train mean w | Val mean w | Test work SD | Test Jacobian mean ± SD | Test Jacobian min/max | Grad norm | Wall s |",
+        "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+    ]
+    for r in rows:
+        lines.append(
+            f"| {r['seed']} | {r['objective']} | "
+            f"{r['batch_loss_last']:.3f} | {r['train_mean_work']:.3f} | "
+            f"{r['validation_mean_work']:.3f} | "
+            f"{r['work_var']**0.5:.3f} | "
+            f"{r['jac_mean']:.3f} ± {r['jac_std']:.3f} | "
+            f"[{r['jac_min']:.3f}, {r['jac_max']:.3f}] | "
+            f"{r['grad_norm']:.3f} | {r['elapsed_s']:.2f} |"
         )
     lines += [
         "",

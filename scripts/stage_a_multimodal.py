@@ -58,6 +58,15 @@ def evaluate(flow, target, x, step, split):
     right_mode_fraction = float(near_right.double().mean())
     outside_mode_fraction = float((~(near_left | near_right)).double().mean())
     assert abs(left_mode_fraction + right_mode_fraction + outside_mode_fraction - 1) < 1e-12
+    # Estimate physical target probabilities using *normalized* TFEP weights.
+    # These differ from raw q_theta occupation; use stable log normalization.
+    logweights = -work
+    weights = np.exp(logweights - np.logaddexp.reduce(logweights))
+    left_mask = near_left.numpy()
+    right_mask = near_right.numpy()
+    left_weight = float(weights[left_mask].sum())
+    right_weight = float(weights[right_mask].sum())
+    outside_weight = float(weights[~(left_mask | right_mask)].sum())
     result = {
         "step": step, "split": split, **stats,
         "df_error": stats["delta_f_reduced"] - target.exact_df,
@@ -71,6 +80,11 @@ def evaluate(flow, target, x, step, split):
         "mapped_left_mode_fraction": left_mode_fraction,
         "mapped_right_mode_fraction": right_mode_fraction,
         "mapped_outside_mode_fraction": outside_mode_fraction,
+        "weighted_left_mode_fraction": left_weight,
+        "weighted_right_mode_fraction": right_weight,
+        "weighted_outside_mode_fraction": outside_weight,
+        "weighted_left_halfspace_fraction": float(weights[(y[:, 0] < 0).numpy()].sum()),
+        "max_normalized_weight": float(weights.max()),
         "mode_region_radius": radius,
     }
     return result, work, y.numpy()
@@ -300,6 +314,7 @@ def main():
         "repo_commit": os.environ.get("GITHUB_SHA", "local"),
         "mode_diagnostic": "Euclidean disks radius 2*sigma around each mode",
         "units": "reduced kBT",
+        "original_research_commit": "b8dfd897ebd914b4e592221710b397a2758353ce",
         "torch_version": torch.__version__,
         "numpy_version": np.__version__,
         "note": ("Pinned upstream mean-work objective" if args.objective == "baseline"
