@@ -1,34 +1,37 @@
-# Scientific roadmap and acceptance gates
+# Scientific checkpoints — keep this project lean
 
-## M1: Reproducibility (weeks 1–4)
-- [x] Minimal installable Python package, tests, CI, layout-check job.
-- [ ] Pin upstream source SHAs and record environment provenance.
-- [ ] Verify selected Zenodo files and extract 2 representative ligand systems.
-- [ ] Reproduce original endpoint delta G and work-sigma values, including energy units.
-- [ ] Measure wall time, CPU/GPU allocation, target energy/force evaluation counts.
+The first priority is a working published QM/MM endpoint correction, not exhaustive tests or a general-purpose framework.
 
-**Go/no-go:** baseline agrees with reported values within reported uncertainty, with explainable deviations.
+## Checkpoint 1 — Working baseline (now)
+- [x] Minimal Python project, numerical smoke tests, lightweight CI.
+- [ ] Inspect selected files in the authors' Zenodo archive and choose **one ligand in one phase**.
+- [ ] Pin upstream code revisions and set up its actual Python/TFEP/GROMACS/tblite dependencies.
+- [ ] Run the author's original `run_tfep.py` training and estimation for that endpoint.
+- [ ] Compare its estimated correction and generalized-work spread against the reported result.
+- [ ] Record input file manifest, reproducible command, environment, output, and wall time.
 
-## M2: Training method (weeks 5–8)
-- [ ] Implement optional ESS-aware objective and Jacobian regularization in the original PyTorch pipeline.
-- [ ] Unit-test derivatives, invertible maps, and exact free-energy invariances on toy systems.
-- [ ] Reproduce original loss as special case (regularization coefficients = 0).
-- [ ] Compare equal-budget training on independent repeats and random seeds.
+**Scientific gate:** one reproduced result, not just successful imports.
 
-**Go/no-go:** improvement in independent importance ESS and/or uncertainty, without contradictory free energies.
+## Checkpoint 2 — Controlled methodology change
+- [ ] Make the smallest possible change to the original training objective.
+- [ ] Train baseline and modified flows on the same configurations at matched QM/MM evaluation cost.
+- [ ] Compare held-out free energies, work spread, and importance ESS.
 
-## M3: Statistical validation (weeks 9–12)
-- [ ] Freeze hyperparameters; independent held-out benchmark.
-- [ ] Run block/trajectory bootstrap, convergence curves, outlier and tail diagnostics.
-- [ ] Report negative results and computational budgets transparently.
+**Scientific gate:** show numerical improvement without changing the Hamiltonian or obtaining incompatible free energies.
 
-## M4–M6: Extend only if validated
-- [ ] Wider p38 benchmark.
-- [ ] ARM64 and H200 environment validation on the target cluster.
-- [ ] Electrostatic-embedding *pilot* only after energy/force and double-counting tests.
+## Checkpoint 3 — Replication across systems
+- [ ] Add water/protein for selected ligands.
+- [ ] Compare independent random seeds and independent MD repeat blocks.
+- [ ] Expand only after finding stable improvement on the difficult cases.
 
-## Main risks
-- A reduced Jacobian variance does not by itself imply unbiased finite-sample free energy.
-- The original mapping training data can overfit; sample independence is crucial.
-- H200 accelerates training, but many QM/MM evaluations may remain CPU-bound or poorly GPU-utilized.
-- A changed Hamiltonian is a separate question from a better estimator.
+## Checkpoint 4 — Cluster migration
+- [ ] Verify PyTorch CUDA on Linux ARM64/H200.
+- [ ] Validate native GROMACS/tblite and cluster modules.
+- [ ] Run the same baseline and improved commands under SLURM.
+
+## Scope decisions
+- Avoid full alchemical A→B reruns.
+- Don't download the entire trajectory archive into GitHub Actions.
+- Keep automated tests to essential numerical smoke checks; expand only when a real bug or scientific requirement justifies them.
+- Do not spend the initial weeks on electrostatic embedding, extensive regularization grids, or elaborate CI.
+- Document what **ran** separately from what is merely **planned**.
