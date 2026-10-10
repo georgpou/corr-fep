@@ -277,6 +277,8 @@ def main():
         raise ValueError("Upstream TBLitePotential assumes neutral ligand")
     vers = run(GMX, "--version")
     (OUT / "gromacs-version.txt").write_text(vers)
+    if not re.search(r"^\s*Precision:\s+double\b", vers, flags=re.M | re.I):
+        raise RuntimeError("Stage B1 strict gradient audit requires double-precision GROMACS")
     provenance = dict(
         source=source,
         published_inputs={**{k: {"sha256": digest(v), "bytes":len(v)}
@@ -374,9 +376,8 @@ def main():
             stage["finite_difference_checks"].append(item)
             save_json("components.json", stage)
             print("FD_PROBE", json.dumps(item), flush=True)
-            # The 0.002 A probe diagnoses single-precision energy quantization;
-            # acceptance is judged using the better-conditioned 0.005 and 0.010 A steps.
-            if h >= 0.005 and err > 0.8:
+            # With double-precision energies, all three FD scales must pass.
+            if err > 0.8:
                 raise AssertionError("Combined QM/MM derivative mismatch; "
                                      + json.dumps(item))
     stage["max_fd_abs_error_kj_mol_angstrom"] = max(
@@ -387,8 +388,9 @@ def main():
         for h in (0.002, 0.005, 0.010)
     }
     stage["precision_limitation"] = (
-        "GROMACS 2023.3 Ubuntu is mixed precision; smaller finite difference steps "
-        "are susceptible to absolute energy quantization. Do not claim 2021.6 double equivalence."
+        "The pinned GROMACS 2023.3 run is double precision, unlike the initial "
+        "Ubuntu mixed-precision exploratory runs. This does not establish bitwise "
+        "equivalence to the authors\u0027 GROMACS 2021.6 double-precision build."
     )
     stage["validated"] = True
     save_json("components.json", stage)
