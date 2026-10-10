@@ -23,3 +23,15 @@ The script's `validated=true` means ONLY that the XVG has an identifiable Potent
 Original dynamics used GROMACS 2021.6 double precision, whereas this rerun is GROMACS 2023.3 double; the deposited trajectory is lossy XTC rather than full-precision TRR. The archived GRO title does not prove its time. The four configurations belong to one repeat and are not independent. The first-repeat subset cannot reproduce the authors' 25-repeat training experiment. No offsets, fitted corrections, ESS or Delta G are established here.
 
 Keep [issue #9](https://github.com/georgpou/corr-fep/issues/9) open until a reviewed numerical run establishes which conclusions are supported.
+
+## Follow-up: direct native coordinate-precision experiment (B2.2b)
+
+The first B2.2 audit established that the deposited Potential has 2401 exactly spaced records and selected XTC times match. Yet the same-TPS re-evaluated energies exceed the deposited original by **258.51, 303.24, 261.64 and 317.73 kJ/mol**. Original archived and rebuilt full-system TPR reruns agree to ~1e-8 kJ/mol.
+
+An eight-evaluation symmetric perturbation diagnostic (+/-0.005 Å independently per coordinate on four XTC frames) has mean total-energy increase **283.76 kJ/mol**, mainly **bond +240.54**, **angle +35.13**, **short-range LJ +8.04** kJ/mol. This is suggestive, **not** a proof that actual deposited XTC precision produced the discrepancy. Because both + and - perturbations increase energy, strong local curvature/bond stiffness is a plausible mechanism.
+
+The script `scripts/stage_b_precision_roundtrip.py` and workflow `.github/workflows/stage-b-precision-roundtrip.yml` run one **new** 0.5 ps NVT trajectory from the real archived water model, recording uncompressed TRR and lossy XTC on identical simulation timesteps. Double-precision GROMACS then reruns *both native trajectories under the same TPR* and compares their EDR Potential and components (bond, angle, dihedrals, LJ, Coulomb and dispersion). It also compares each rerun with the energy recorded during MD.
+
+This is a **mechanistic test on newly generated frames**, NOT restoration of the original full-precision TRR or a substitute for the original dataset. An exact numerical match between a new compressed-minus-uncompressed bias and the observed original residual would support compression as the dominant cause; matching only scale does not uniquely establish causation. No fitting, offset, flow training, or free-energy inference is permitted.
+
+**Status**: committed, numerical result pending GitHub Actions run https://github.com/georgpou/corr-fep/actions/runs/38091870934 . Inspect paired artifacts and document measured results before releasing PR #11 for review. Keep issue #9 open.
