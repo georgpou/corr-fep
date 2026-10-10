@@ -1,0 +1,197 @@
+#!/usr/bin/env python3
+"""Stage A2: two-mode target with a known free energy and mode coverage."""
+import argparse
+import csv
+import json
+import math
+from pathlib import Path
+import time
+
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+import numpy as np
+import torch
+from tfep.loss import BoltzmannKLDivLoss
+
+from stage_a_gaussian import make_flow, reference_potential
+from corr_fep.diagnostics import summarize_work
+
+
+class TwoModeTarget:
+    """Equal-weight Gaussian mixture with analytically calculable partition function."""
+
+    def __init__(self, separation=5.0, sigma=0.7):
+        self.centers = torch.tensor([[-separation, 0.0], [separation, 0.0]], dtype=torch.float64)
+        self.sigma = sigma
+        self.offset = 1.25
+        self.evaluations = 0
+        # Z_B = exp(-c) * (2*pi*sigma**2), Z_A = 2*pi.
+        self.exact_df = self.offset - 2.0 * math.log(sigma)
+
+    def __call__(self, y):
+        self.evaluations += len(y)
+        sqdist = ((y[:, None, :] - self.centers[None, :, :]) ** 2).sum(-1)
+        terms = -0.5 * sqdist / self.sigma**2 - math.log(2.0)
+        return -torch.logsumexp(terms, dim=1) + self.offset
+
+
+@torch.no_grad()
+def evaluate(flow, target, x, step, split):
+    y, logj = flow(x)
+    work = (target(y) - reference_potential(x) - logj).numpy()
+    jac = logj.numpy()
+    stats = summarize_work(work)
+    # Half spaces x<0 and x>=0 partition target equally by symmetry.
+    # Unlike ESS, mapped occupancy detects an absent target mode.
+    left_fraction = float((y[:, 0] < 0).double().mean())
+    result = {
+        "step": step, "split": split, **stats,
+        "df_error": stats["delta_f_reduced"] - target.exact_df,
+        "work_var": float(np.var(work, ddof=1)),
+        "jac_mean": float(jac.mean()), "jac_std": float(jac.std(ddof=1)),
+        "jac_min": float(jac.min()), "jac_max": float(jac.max()),
+        "jac_p01": float(np.quantile(jac, 0.01)),
+        "jac_p99": float(np.quantile(jac, 0.99)),
+        "mapped_left_fraction": left_fraction,
+        "mapped_mode_imbalance": abs(left_fraction - 0.5),
+        "target_log_density_at_mode": float(-target(target.centers[:1]).item()),
+    }
+    return result, work
+
+
+def single_experiment(args, seed, out):
+    torch.manual_seed(seed)
+    generator = torch.Generator().manual_seed(seed + 27)
+    train = torch.randn(args.n_train, 2, generator=generator, dtype=torch.float64)
+    validation = torch.randn(args.n_val, 2, generator=generator, dtype=torch.float64)
+    target = TwoModeTarget(args.separation, args.sigma)
+    flow = make_flow(args.layers, args.width)
+    initial_parameters = sum(p.numel() for p in flow.parameters())
+    optimizer = torch.optim.AdamW(flow.parameters(), lr=args.lr)
+    scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.997)
+    objective = BoltzmannKLDivLoss()
+    rows, losses = [], []
+    last_grad_norm = None
+    initial_work, final_work = None, None
+    t0 = time.perf_counter()
+
+    for step in range(args.steps + 1):
+        if step % args.eval_every == 0 or step == args.steps:
+            for name, x in [("train", train), ("validation", validation)]:
+                row, work = evaluate(flow, target, x, step, name)
+                row["grad_norm"] = last_grad_norm
+                rows.append(row)
+                if name == "validation":
+                    if initial_work is None:
+                        initial_work = work
+                    final_work = work
+            v = rows[-1]
+            print(f"seed={seed} step={step} train_loss={rows[-2]['mean_work_reduced']:.4f} "
+                  f"val_ess={v['importance_ess']:.1f}/{v['n']} "
+                  f"val_df={v['delta_f_reduced']:.4f} target_df={target.exact_df:.4f} "
+                  f"left={v['mapped_left_fraction']:.3f}", flush=True)
+
+        if step == args.steps:
+            break
+        idx = torch.randint(len(train), (args.batch_size,), generator=generator)
+        xb = train[idx]
+        optimizer.zero_grad()
+        y, logj = flow(xb)
+        loss = objective(target_potentials=target(y), log_det_J=logj)
+        if not torch.isfinite(loss).item():
+            raise FloatingPointError(f"Nonfinite loss at seed={seed} step={step}")
+        loss.backward()
+        last_grad_norm = math.sqrt(sum(
+            float((p.grad.detach() ** 2).sum()) for p in flow.parameters() if p.grad is not None
+        ))
+        if not math.isfinite(last_grad_norm):
+            raise FloatingPointError(f"Nonfinite gradient at seed={seed} step={step}")
+        optimizer.step()
+        scheduler.step()
+        losses.append(float(loss.detach()))
+
+    out.mkdir(parents=True, exist_ok=True)
+    with (out / "metrics.csv").open("w", newline="") as file:
+        w = csv.DictWriter(file, fieldnames=list(rows[0]))
+        w.writeheader()
+        w.writerows(rows)
+    with (out / "batch_losses.csv").open("w", newline="") as file:
+        w = csv.writer(file)
+        w.writerow(["step", "batch_loss"])
+        w.writerows(enumerate(losses, start=1))
+
+    for file, metric, ylabel in [
+        ("loss.png", "mean_work_reduced", "Mean generalized work (kBT)"),
+        ("ess.png", "importance_ess_fraction", "Raw ESS fraction"),
+        ("jacobian.png", "jac_std", "SD of log |det J|"),
+        ("mode_coverage.png", "mapped_left_fraction", "Mapped left-mode fraction"),
+        ("free_energy.png", "df_error", "Estimated Delta f - exact (kBT)"),
+    ]:
+        fig, ax = plt.subplots(figsize=(6, 4))
+        for split in ("train", "validation"):
+            r = [v for v in rows if v["split"] == split]
+            ax.plot([v["step"] for v in r], [v[metric] for v in r], label=split)
+        if file == "mode_coverage.png":
+            ax.axhline(0.5, color="black", linestyle="--", label="Target fraction")
+        elif file == "free_energy.png":
+            ax.axhline(0, color="black", linestyle="--", label="Exact")
+        ax.set_xlabel("Optimizer step")
+        ax.set_ylabel(ylabel)
+        ax.legend()
+        fig.tight_layout()
+        fig.savefig(out / file, dpi=140)
+        plt.close(fig)
+
+    fig, ax = plt.subplots(figsize=(6, 4))
+    ax.hist(initial_work, bins=70, density=True, alpha=0.5, label="initial")
+    ax.hist(final_work, bins=70, density=True, alpha=0.5, label="trained")
+    ax.set_xlabel("Held-out generalized work (kBT)")
+    ax.legend()
+    fig.tight_layout()
+    fig.savefig(out / "work_distribution.png", dpi=140)
+    plt.close(fig)
+    np.savez_compressed(out / "validation_work.npz",
+                        initial=initial_work, final=final_work)
+
+    first = next(r for r in rows if r["split"] == "validation")
+    last = next(r for r in reversed(rows) if r["split"] == "validation")
+    summary = {
+        "seed": seed, "initial_validation": first, "final_validation": last,
+        "exact_df": target.exact_df,
+        "parameters": initial_parameters, "target_evaluations": target.evaluations,
+        "elapsed_s": time.perf_counter() - t0,
+    }
+    (out / "summary.json").write_text(json.dumps(summary, indent=2, allow_nan=False))
+    return summary
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--out", type=Path, default=Path("results/stage-a/non-gaussian"))
+    parser.add_argument("--seeds", type=int, nargs="+", default=[17, 29, 43])
+    parser.add_argument("--steps", type=int, default=350)
+    parser.add_argument("--n-train", type=int, default=768)
+    parser.add_argument("--n-val", type=int, default=4096)
+    parser.add_argument("--batch-size", type=int, default=128)
+    parser.add_argument("--eval-every", type=int, default=25)
+    parser.add_argument("--layers", type=int, default=2)
+    parser.add_argument("--width", type=int, default=32)
+    parser.add_argument("--lr", type=float, default=0.002)
+    parser.add_argument("--separation", type=float, default=5.0)
+    parser.add_argument("--sigma", type=float, default=0.7)
+    args = parser.parse_args()
+    torch.set_num_threads(1)
+    args.out.mkdir(parents=True, exist_ok=True)
+    (args.out / "config.json").write_text(json.dumps({
+        **vars(args), "out": str(args.out),
+        "tfep_commit": "0bc369a1194c688bb6ac997cc6b7c2db2b063c9e",
+        "units": "reduced kBT",
+        "note": "Original objective only. No regularizer or architecture comparison.",
+    }, indent=2, allow_nan=False))
+    summaries = [single_experiment(args, seed, args.out / f"seed-{seed}") for seed in args.seeds]
+    (args.out / "summary.json").write_text(json.dumps(summaries, indent=2, allow_nan=False))
+
+
+if __name__ == "__main__":
+    main()
