@@ -2,6 +2,7 @@
 """Stage A2: two-mode target with a known free energy and mode coverage."""
 import argparse
 import csv
+import hashlib
 import json
 import math
 import os
@@ -57,6 +58,15 @@ def evaluate(flow, target, x, step, split):
     right_mode_fraction = float(near_right.double().mean())
     outside_mode_fraction = float((~(near_left | near_right)).double().mean())
     assert abs(left_mode_fraction + right_mode_fraction + outside_mode_fraction - 1) < 1e-12
+    # Estimate physical target probabilities using *normalized* TFEP weights.
+    # These differ from raw q_theta occupation; use stable log normalization.
+    logweights = -work
+    weights = np.exp(logweights - np.logaddexp.reduce(logweights))
+    left_mask = near_left.numpy()
+    right_mask = near_right.numpy()
+    left_weight = float(weights[left_mask].sum())
+    right_weight = float(weights[right_mask].sum())
+    outside_weight = float(weights[~(left_mask | right_mask)].sum())
     result = {
         "step": step, "split": split, **stats,
         "df_error": stats["delta_f_reduced"] - target.exact_df,
@@ -70,6 +80,11 @@ def evaluate(flow, target, x, step, split):
         "mapped_left_mode_fraction": left_mode_fraction,
         "mapped_right_mode_fraction": right_mode_fraction,
         "mapped_outside_mode_fraction": outside_mode_fraction,
+        "weighted_left_mode_fraction": left_weight,
+        "weighted_right_mode_fraction": right_weight,
+        "weighted_outside_mode_fraction": outside_weight,
+        "weighted_left_halfspace_fraction": float(weights[(y[:, 0] < 0).numpy()].sum()),
+        "max_normalized_weight": float(weights.max()),
         "mode_region_radius": radius,
     }
     return result, work, y.numpy()
@@ -80,9 +95,21 @@ def single_experiment(args, seed, out):
     generator = torch.Generator().manual_seed(seed + 27)
     train = torch.randn(args.n_train, 2, generator=generator, dtype=torch.float64)
     validation = torch.randn(args.n_val, 2, generator=generator, dtype=torch.float64)
+    # Separate generator: the A2 baseline training batches remain unchanged.
+    test = (torch.randn(args.n_test, 2,
+                        generator=torch.Generator().manual_seed(seed + 100027),
+                        dtype=torch.float64) if args.n_test else None)
+    sample_hashes = {
+        "training_sha256": hashlib.sha256(train.numpy().tobytes()).hexdigest(),
+        "validation_sha256": hashlib.sha256(validation.numpy().tobytes()).hexdigest(),
+        "test_sha256": hashlib.sha256(test.numpy().tobytes()).hexdigest() if test is not None else None,
+    }
     target = TwoModeTarget(args.separation, args.sigma)
     flow = make_flow(args.layers, args.width)
     initial_parameters = sum(p.numel() for p in flow.parameters())
+    initial_parameters_sha256 = hashlib.sha256(b"".join(
+        p.detach().numpy().tobytes() for p in flow.parameters()
+    )).hexdigest()
     optimizer = torch.optim.AdamW(flow.parameters(), lr=args.lr)
     scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.997)
     objective = BoltzmannKLDivLoss()
@@ -91,6 +118,7 @@ def single_experiment(args, seed, out):
     initial_work, final_work = None, None
     initial_mapped, final_mapped = None, None
     t0 = time.perf_counter()
+    training_s = 0.0
 
     for step in range(args.steps + 1):
         if step % args.eval_every == 0 or step == args.steps:
@@ -115,9 +143,18 @@ def single_experiment(args, seed, out):
             break
         idx = torch.randint(len(train), (args.batch_size,), generator=generator)
         xb = train[idx]
+        tick = time.perf_counter()
         optimizer.zero_grad()
         y, logj = flow(xb)
-        loss = objective(target_potentials=target(y), log_det_J=logj)
+        target_energies = target(y)  # One target evaluation per minibatch for both objectives.
+        if args.objective == "baseline":
+            loss = objective(target_potentials=target_energies, log_det_J=logj)
+        else:
+            # Hellinger affinity = const * E_A[exp(-w/2)]. Partition function
+            # is unknown but its contribution to -log(affinity) is constant.
+            # The source potential MUST be retained in these nonlinear weights.
+            w = target_energies - reference_potential(xb) - logj
+            loss = -(torch.logsumexp(-args.beta * w, dim=0) - math.log(len(w)))
         if not torch.isfinite(loss).item():
             raise FloatingPointError(f"Nonfinite loss at seed={seed} step={step}")
         loss.backward()
@@ -128,9 +165,19 @@ def single_experiment(args, seed, out):
             raise FloatingPointError(f"Nonfinite gradient at seed={seed} step={step}")
         optimizer.step()
         scheduler.step()
+        training_s += time.perf_counter() - tick
         losses.append(float(loss.detach()))
 
+    test_row = None
+    if test is not None:
+        test_row, test_work, mapped_test = evaluate(flow, target, test, args.steps, "test")
+        test_row["grad_norm"] = last_grad_norm
+        rows.append(test_row)
     out.mkdir(parents=True, exist_ok=True)
+    if test is not None:
+        np.savez_compressed(out / "test_work.npz",
+                            source_test=test.numpy(), mapped_test=mapped_test,
+                            work_test=test_work)
     with (out / "metrics.csv").open("w", newline="") as file:
         w = csv.DictWriter(file, fieldnames=list(rows[0]))
         w.writeheader()
@@ -161,6 +208,16 @@ def single_experiment(args, seed, out):
         fig.tight_layout()
         fig.savefig(out / file, dpi=140)
         plt.close(fig)
+
+    # The existing loss.png deliberately shows *mean work*, not the Hellinger
+    # objective. Save the actual optimized minibatch losses separately.
+    fig, ax = plt.subplots(figsize=(6, 4))
+    ax.plot(np.arange(1, len(losses) + 1), losses, linewidth=1)
+    ax.set_xlabel("Optimizer step")
+    ax.set_ylabel(f"Optimized minibatch loss ({args.objective})")
+    fig.tight_layout()
+    fig.savefig(out / "minibatch_loss.png", dpi=140)
+    plt.close(fig)
 
     # Mode-basin occupancy is *not* the same as left/right halfspace balance.
     # For well-separated 2D Gaussians, the 2*sigma disk contains 1-exp(-2)
@@ -222,10 +279,14 @@ def single_experiment(args, seed, out):
     first = next(r for r in rows if r["split"] == "validation")
     last = next(r for r in reversed(rows) if r["split"] == "validation")
     summary = {
-        "seed": seed, "initial_validation": first, "final_validation": last,
+        "seed": seed, "objective": args.objective, "beta": args.beta if args.objective == "hellinger" else None,
+        "initial_validation": first, "final_validation": last, "final_test": test_row,
         "exact_df": target.exact_df,
-        "parameters": initial_parameters, "target_evaluations": target.evaluations,
-        "elapsed_s": time.perf_counter() - t0,
+        "parameters": initial_parameters,
+        "initial_parameters_sha256": initial_parameters_sha256,
+        **sample_hashes,
+        "target_evaluations": target.evaluations, "optimizer_steps": args.steps,
+        "training_s": training_s, "elapsed_s": time.perf_counter() - t0,
     }
     (out / "summary.json").write_text(json.dumps(summary, indent=2, allow_nan=False))
     return summary
@@ -238,6 +299,11 @@ def main():
     parser.add_argument("--steps", type=int, default=350)
     parser.add_argument("--n-train", type=int, default=768)
     parser.add_argument("--n-val", type=int, default=4096)
+    parser.add_argument("--n-test", type=int, default=0,
+                        help="Independent final-only test; zero preserves the A2 protocol.")
+    parser.add_argument("--objective", choices=["baseline", "hellinger"], default="baseline")
+    parser.add_argument("--beta", type=float, default=0.5,
+                        help="Power in -log mean(exp(-beta*w)); A3 fixes beta=0.5.")
     parser.add_argument("--batch-size", type=int, default=128)
     parser.add_argument("--eval-every", type=int, default=25)
     parser.add_argument("--layers", type=int, default=2)
@@ -246,6 +312,8 @@ def main():
     parser.add_argument("--separation", type=float, default=5.0)
     parser.add_argument("--sigma", type=float, default=0.7)
     args = parser.parse_args()
+    if args.n_test < 0 or not 0 < args.beta < 1:
+        parser.error("Require n-test >= 0 and 0 < beta < 1.")
     if args.sigma <= 0 or args.separation <= 2 * args.sigma:
         parser.error("Require sigma > 0 and separation > 2*sigma for disjoint mode disks.")
     torch.set_num_threads(1)
@@ -256,7 +324,11 @@ def main():
         "repo_commit": os.environ.get("GITHUB_SHA", "local"),
         "mode_diagnostic": "Euclidean disks radius 2*sigma around each mode",
         "units": "reduced kBT",
-        "note": "Original objective only. No regularizer or architecture comparison.",
+        "original_research_commit": "b8dfd897ebd914b4e592221710b397a2758353ce",
+        "torch_version": torch.__version__,
+        "numpy_version": np.__version__,
+        "note": ("Pinned upstream mean-work objective" if args.objective == "baseline"
+                 else "Hellinger affinity, normalized minibatch exponent beta=0.5; no target samples"),
     }, indent=2, allow_nan=False))
     summaries = [single_experiment(args, seed, args.out / f"seed-{seed}") for seed in args.seeds]
     (args.out / "summary.json").write_text(json.dumps(summaries, indent=2, allow_nan=False))
