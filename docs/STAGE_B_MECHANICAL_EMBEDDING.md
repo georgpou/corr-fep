@@ -63,3 +63,22 @@ The accepted final scientific source is `f7505065cb77c87d0ca8e054352a050d0377af6
 The archived input SHA256 digests, exact published atom indices, original FF hashes, processed MDP and generated TPR hashes, pinned upstream software commits, GROMACS version/precision, per-step analytic and finite-difference gradients, and diagnostic engine logs are recorded in the artifact. The current branch's later `docs/` update changes documentation only.
 
 **Scientific limitations:** one archived water configuration and one repeat; no QM/MM equilibrium sampling, TFEP target distribution, map optimization or free energy result; the `MechanicalEmbedding` implementation is single-frame and must be generalized/validated separately before molecular training. Do not merge without explicit user approval.
+
+## Reusing the GROMACS CPU build
+
+The Actions workflow caches the **installed** pinned GROMACS 2023.3 double-precision
+binary (not generated TPRs, force-field inputs, coordinates, or results) using
+`actions/cache/restore@v4` and `actions/cache/save@v4`. The cache key includes
+the original GROMACS source commit, important CMake choices (double precision,
+CPU/thread MPI, FFTW3 and SIMD), and runner OS/architecture. A cache miss builds
+GROMACS and saves it **before** evaluating the molecular Hamiltonian, so a
+failed scientific gradient check does not discard a successful build. A cache
+hit skips source checkout, CMake and compilation. Each run still installs the
+small FFTW runtime package and verifies the cached build fingerprint,
+executable, double precision and runtime-library resolution before using it.
+
+The first successful run with this cache configuration must populate it;
+subsequent runs on the same branch/platform can restore it. GitHub cache
+eviction or changes to the pinned build ID may require recompilation. Cache
+restoration is a performance optimization only and does not change the
+Hamiltonian, coordinates, precision, MDPs or scientific acceptance thresholds.
