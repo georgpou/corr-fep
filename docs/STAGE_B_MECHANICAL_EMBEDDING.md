@@ -35,7 +35,7 @@ Direct tblite versus TFEP quantum discrepancies were `9.8953e-10 kJ/mol` in ener
 | 0.005 | 0.45640 |
 | 0.010 | 0.63276 |
 
-The accepted strict bound is **0.8 kJ/mol/Å at 0.005 and 0.010 Å**; all relevant probes passed. Smaller 0.002 Å derivatives are retained to show loss of precision. The complete GROMACS-minus-GROMACS-plus-QM energy is reevaluated on every perturbed structure (not a surrogate). The agreement supports correct gradient signs and atom correspondence at this state point, **not** universal smoothness or force-field interchangeability.
+The module also accepts TFEP-style `(batch_positions, batch_cell)`, with respective shapes `(1, 3N)` and `(1, 6)`; an additional complete-module backward evaluation is independently compared with the three-component analytical gradient. The accepted strict bound is **0.8 kJ/mol/Å at 0.005 and 0.010 Å**; all relevant probes passed. Smaller 0.002 Å derivatives are retained to show loss of precision. The complete GROMACS-minus-GROMACS-plus-QM energy is reevaluated on every perturbed structure (not a surrogate). The agreement supports correct gradient signs and atom correspondence at this state point, **not** universal smoothness or force-field interchangeability.
 
 ## Compiled TPR physical audit
 
