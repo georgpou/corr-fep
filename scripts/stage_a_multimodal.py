@@ -209,6 +209,16 @@ def single_experiment(args, seed, out):
         fig.savefig(out / file, dpi=140)
         plt.close(fig)
 
+    # The existing loss.png deliberately shows *mean work*, not the Hellinger
+    # objective. Save the actual optimized minibatch losses separately.
+    fig, ax = plt.subplots(figsize=(6, 4))
+    ax.plot(np.arange(1, len(losses) + 1), losses, linewidth=1)
+    ax.set_xlabel("Optimizer step")
+    ax.set_ylabel(f"Optimized minibatch loss ({args.objective})")
+    fig.tight_layout()
+    fig.savefig(out / "minibatch_loss.png", dpi=140)
+    plt.close(fig)
+
     # Mode-basin occupancy is *not* the same as left/right halfspace balance.
     # For well-separated 2D Gaussians, the 2*sigma disk contains 1-exp(-2)
     # of its own component. Contributions from the opposite peak are negligible.
