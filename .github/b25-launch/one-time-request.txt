@@ -2,3 +2,5 @@ B2.5 one-time launch request, 2026-10-11.
 Run the small real-QM/MM preflight first; run the single bounded full benchmark only if it passes. This file is a one-time branch push trigger. Do not modify or re-push this marker to retry automatically.
 
 Explicit one-time retry after verified preflight scratch collision; 2026-10-11. Do not retry automatically.
+
+Explicit third attempt, authorized by user, after confirmed GROMACS maximum-99-backups failure. The job-level GMX_MAXBACKUP=-1 fix is present. Single preflight-gated run on dev branch only; no autonomous retries. 2026-10-11.
