@@ -15,6 +15,9 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 210
     env:
+      # Prevent >99 GROMACS automatic backup generations during thousands
+      # of sequential QM/MM single-point reruns; numerical inputs unchanged.
+      GMX_MAXBACKUP: "-1"
       GROMACS_BUILD_ID: v2023.3-5e5ea27d8e594124d229a726616b7f6473f2c935-dp-cpu-threadmpi-fftw3-simdnone-v1
     steps:
       - uses: actions/checkout@v4
