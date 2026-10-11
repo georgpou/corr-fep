@@ -42,9 +42,8 @@ topology/MDPs and 1000-fold expanded ligand-only box, and tblite GFN1-xTB.
   results/stage-b/training-interface/training-interface.json.
 
 Execute using .github/workflows/stage-b-training-interface.yml. Its Actions
-artifact includes the JSON and full logs even on failure. **The protocol
-is not itself evidence that B2.3 passed**: require validated=true in the
-measured JSON and inspect execution logs before accepting the checkpoint.
+artifact includes the JSON and full logs even on failure. See the accepted
+run record below; scientific acceptance requires the JSON plus logs, not CI alone.
 
 ## Sampling caveats and next gate
 
@@ -59,3 +58,58 @@ repeat is available, with time-correlated frames. No free energy, ESS or
 B2.4 must replace the diagnostic map with the original molecular MixedMAF,
 run a small real train optimization, and evaluate held-out temporally blocked
 samples while tracking work, loss, Jacobians and the sampling limitation.
+
+
+## Accepted molecular execution — 2026-10-11
+
+The dedicated [GitHub Actions run 38127130676](https://github.com/georgpou/corr-fep/actions/runs/38127130676)
+**passed** on commit `3e09c5c86cafa917726cc239849bdd77b2a81d94`.
+The archived [scientific artifact 11696804319](https://github.com/georgpou/corr-fep/actions/runs/38127130676/artifacts/11696804319)
+was inspected independently: the ZIP has a valid CRC and its
+`training-interface/training-interface.json` reports `validated: true`.
+This is a passed B2.3 *interface* checkpoint, **not** a trained flow.
+
+- Input: 8,420 full-system atoms, 46 ligand atoms; Cartesian batch
+  `(3,25260)`; frames 401, 1067, 1733 at 2005, 5335, 8665 ps, with
+  measured box sides 43.66759, 43.65424, 43.68644 Å, respectively.
+- Full FF reference energies (kJ/mol): −117062.438646,
+  −116604.925596, −117393.872495.
+- Full target QM/MM energies (kJ/mol): −332413.311513,
+  −331926.731450, −332747.896869.
+- The baseline complete FF + QM/MM energy/gradient minibatch took
+  **6.5678 s for 3 frames**, or **0.4568 frames/s** on GitHub Actions
+  CPU; peak process RSS was **477.97 MiB**. This excludes the archive
+  retrieval, environment installation, and TPR compilation.
+- Frame-401 direct scalar-backend versus batch-backend energies/gradients:
+  recorded maximum discrepancies **0** within reported precision.
+  The independent central-difference errors (kJ/mol/Å) were **0.024428**
+  for the ligand and **0.003195** for the interfacial solvent, both
+  below the predeclared B2.1 threshold of 0.8.
+- Diagnostic ligand affine map: scale 1.0002, shift
+  (0.001, −0.001, 0.0005) Å. Analytical `log|J|` **0.02699730**
+  per 46-atom ligand; the separate two-atom determinant check differed
+  by **1.18e−16**. Inversion error **3.55e−15 Å**, forward/inverse
+  log-determinant closure **6.25e−17**; mapped-work parameter-gradient
+  chain-rule discrepancies **1.14e−13** (scale) and **2.13e−14**
+  (shift). Repeated target energies were exactly equal at the recorded
+  precision.
+- The three illustrative dimensionless reduced map works were
+  −86914.9921, −86903.3389, −86916.5635, each independently
+  recalculated from its archived numerical reference energy, mapped
+  target energy, beta and log-J. These large negative values contain
+  the absolute QM electronic energy offset; **they are not estimates
+  of free energy and should not be compared to the original paper's
+  free-energy values.**
+- The original XTC ZIP member hash was
+  `1d9451c4f969d23791676e971fdb358394917ea7c51dae43e7390fe604e99362`.
+  Generated GROMACS full/ligand TPR hashes were
+  `302012826952186547ef1326bc49e9d998f866b5c0ba7357f8e1b5707ce7219d`
+  and `682d9a45e59888639684a82409a9186653253bcde10c4888a3ad2c89a66fb370`.
+  The artifact preserves the full per-file archive and topology hashes.
+
+**Acceptance:** B2.3 establishes finite real minibatch energy/force
+autograd, a consistent reference/mapped-target work convention, and
+numerically checked invertible mapping semantics. It does **not** establish
+a functioning or optimized published MixedMAF, statistical overlap,
+meaningful ESS, unbiased MD sampling, or a free-energy result. Those are
+separate scientific gates in B2.4 and beyond.
