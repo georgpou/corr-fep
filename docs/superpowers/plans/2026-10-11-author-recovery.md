@@ -45,3 +45,5 @@ Inspect artifacts, independently recompute work and recorded determinants, reque
 - Ruling: prior in-chat source-informed design is explicitly authorized; do not add another approval cycle.
 - Ruling: 96 training frames and 3 updates retain author batch32/one-epoch pattern at cloud pilot scale; not full-paper replication.
 - Ruling: inspect U3 but keep environment-only conditioning now; mapped-solvent extension is outside this recovery.
+
+- Task 1 execution: Actions 38152838415 failed before source audit because TPR was not materialized. Corrected raw TPR write; no numerical/source conclusion from that run.

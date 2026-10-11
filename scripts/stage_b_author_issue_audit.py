@@ -16,7 +16,7 @@ import MDAnalysis.analysis.align
 import numpy as np
 import torch
 
-from stage_b_qm_singlepoint import load_archive
+from stage_b_qm_singlepoint import load_archive, TPR_NAME
 from stage_b_mechanical_embedding import ROOT, prepare_files, retrieve_topology, digest
 from stage_b_multiframe import load_trajectory
 from stage_b_extended_cloud_benchmark import SEED, record
@@ -44,7 +44,9 @@ def main():
     destination = OUT/'issue-audit.json'
     record(destination, report)
     try:
-        load_archive()
+        raw = load_archive()
+        ROOT.mkdir(parents=True, exist_ok=True)
+        (ROOT/'archived-eq.tpr').write_bytes(raw[TPR_NAME])
         retrieve_topology()
         prepare_files()
         xtc, info = load_trajectory()

@@ -1,1 +1,1 @@
-One authorized actual-topology released-code issue audit, 2026-10-11. Zero QM or training.
+Corrected TPR materialization; rerun same zero-QM actual-topology audit, 2026-10-11.
