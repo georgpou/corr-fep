@@ -23,7 +23,7 @@ The user permits careful fixes and bounded cloud experiments, but prioritizes sc
 
 ## New diagnostic: examine FIRST
 
-The new one-off **train-only inverse-localization run** is https://github.com/georgpou/corr-fep/actions/runs/38148045379 (branch SHA when dispatched: `680a15dff8023e2b174ab9b31d0d1f1242ef98c0`). **At the most recent check, it was in progress**, in the `Diagnose inverse failure in exact full-training epoch 1` step. Check its present status, logs and uploaded artifact before any new computation. It does not run full baseline validation/test or claim a benchmark success.
+The new one-off **train-only inverse-localization run** is https://github.com/georgpou/corr-fep/actions/runs/38148045379 (branch SHA when dispatched: `680a15dff8023e2b174ab9b31d0d1f1242ef98c0`). **Completed:** all 325 steps and both frozen checkpoints are archived. See the recovery update below before initiating any new computation. It does not run full baseline validation/test or claim a benchmark success.
 
 Relevant files:
 - `scripts/stage_b_extended_cloud_benchmark.py`: `--diagnose-inverse`, `detailed_inverse_probe`, step hook, and `inverse-diagnostic.json`.
@@ -75,3 +75,35 @@ The current full script evaluates initial test work *before* model selection but
 The user has an active hourly status automation initially tracking the failed full benchmark. Update its focus to the inverse diagnosis/new current run when appropriate, without allowing the automation itself to run compute or merge code. Do not create duplicate hourly tasks. Report actual observations, not estimates.
 
 **Definition of done:** A scientifically justified and reproducible correction, concrete inverse/Jacobian evidence *after optimization*, fresh benchmark results from real pinned QM/MM, independent artifact audit, clear limitations, and a reviewable **unmerged** PR #14. No claim of success solely from a green GitHub Actions badge.
+
+
+
+## Recovery update — 2026-10-11, after coordinate review
+
+The original inverse diagnostic completed with exact reproduction of the
+failed epoch and machine-precision mixed/direct-spline inverses. Frozen audit
+[38149445011](https://github.com/georgpou/corr-fep/actions/runs/38149445011)
+replayed both actual trained checkpoints exactly. Disabling only six reference
+shifts restores positional inversion on six sampled train/validation frames
+per checkpoint, but the true Cartesian logdet remains wrong (step-325
+absolute discrepancy 0.01790556). This ablation must not be adopted as a fix.
+
+The diagnostic fixed-solvent-reference proposal in run
+[38150245773](https://github.com/georgpou/corr-fep/actions/runs/38150245773)
+passes sampled inverse/geometry and independent derivative checks at identity
+and noise amplitude 0.001; amplitude 0.03 fails the unchanged geometry gates,
+so the overall run is a scientific failure. No 0.03 determinant was measured.
+Both coordinate experiments used zero QM evaluations and zero physical updates.
+The proposal has not been adopted into the benchmark.
+
+See `docs/B25_COORDINATE_RECOVERY.md` for artifact identifiers, exact evidence,
+review caveats and the concrete next action: a bounded three-update real-QM/MM
+pilot using locked zero-based solvent references 4747/4748/4749, subject to
+the user's methodological decision on conditioning atom selection. First
+check reference continuity/geometry across train and validation without
+validation-driven reselection. Keep original Hamiltonian, objective, data
+partitions, calibration, optimizer and scientific gates. Test remains untouched
+by these recovery experiments. No full rerun or merge is authorized by the
+proposal. PR #14 remains draft; main is unchanged. The original hourly status
+task tracks these completed results and the pending decision; it does not
+execute computations or modify/merge code.

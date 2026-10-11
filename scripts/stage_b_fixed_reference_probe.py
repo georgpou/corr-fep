@@ -130,11 +130,19 @@ def main():
             for frame in frames:
                 u.trajectory[frame]
                 x=torch.tensor(np.asarray(u.atoms.positions,dtype=np.float64).copy().reshape(-1))
-                row=dict(block=block,frame_index=frame,
-                         geometry=check_geometry(mapper,x,fixed,bonds,ligand_idx))
-                if frame in (726,1275):
-                    row["independent_cartesian_jacobian"]=derivative(mapper,x,ligand_idx)
+                row=dict(block=block,frame_index=frame)
                 stage["rows"].append(row)
+                try:
+                    row["geometry"]=check_geometry(mapper,x,fixed,bonds,ligand_idx)
+                    if frame in (726,1275):
+                        row["independent_cartesian_jacobian"]=derivative(mapper,x,ligand_idx)
+                except AssertionError as error:
+                    row.update(passes=False,error=str(error))
+                    report.update(stage="incomplete",failure=row.copy(),
+                                  failed_parameter_noise_amplitude=amplitude)
+                    record(path,report)
+                    raise
+                row["passes"]=True
                 record(path,report)
                 print("B25_FIXED_REFERENCE_PROBE",amplitude,frame,json.dumps(row,allow_nan=False),flush=True)
     report["stage"]="complete"

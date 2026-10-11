@@ -3,8 +3,7 @@
 ## Initial evidence
 
 The original epoch-1 diagnostic is Actions run 38148045379 at commit
-680a15dff8023e2b174ab9b31d0d1f1242ef98c0. Its live step-25, -50, -75,
-and -175 probes show accurate direct spline and autoregressive inverses
+680a15dff8023e2b174ab9b31d0d1f1242ef98c0. Its completed 13 probes (steps 25 through 325) show accurate direct spline and autoregressive inverses
 (about 1e-16 position error and 1e-15 logdet closure), while the full
 Cartesian inverse fails the unchanged 1e-5 gates. The first observed
 failure is at step 25, not necessarily the first failing optimizer step.
@@ -19,9 +18,10 @@ The pinned MixedMAF converts each configuration to an atom-based relative
 frame, stores six reference-coordinate residuals near zero, shifts those
 residuals, and reconstructs Cartesian positions in the original frame.
 Its inverse then constructs a new frame from the moved reference atoms.
-Our working hypothesis is that this recoding changes the internal/reference
-coordinates supplied to the inverse MAF. This is a hypothesis until the
-frozen-coordinate experiment below confirms the causal link.
+The frozen-coordinate experiment below confirms that this recoding changes
+the internal/reference coordinates supplied to the inverse MAF. The precise
+missing Jacobian formula remains unresolved; the independently measured
+determinant discrepancy establishes that inverse closure alone is insufficient.
 
 ## One bounded frozen-coordinate experiment
 
@@ -132,3 +132,78 @@ perturbations of 0.001 and 0.03 are examined. **Perturbation is not trained
 optimization**; no QM/MM energies, mock energies, or training are used.
 The experiment is capped at 40 workflow minutes and 25 execution minutes.
 No full benchmark retry is authorized by a successful diagnostic.
+
+
+## Completed fixed-reference probe and limits
+
+Actions run [38150245773](https://github.com/georgpou/corr-fep/actions/runs/38150245773),
+at commit `55c217c6779ccae7d4a6d5ca7b35ef5c750bdfc2`, completed with an
+**overall scientific failure** at the 0.03 perturbation. Artifact
+11706637983 contains the successful smaller-perturbation rows and the raw
+failure log. The original JSON did not persist the failed row; the later
+reporting repair writes failures before re-raising and does not alter gates
+or retroactively modify that artifact. No experiment was rerun for this repair.
+
+The locked reference identity is zero-based atoms **4747, 4748, 4749**
+(O/H/H): origin 4747, axes 4748 and 4749. Selection used only the original
+32 training calibration frames. Initial oxygen-to-ligand-centroid distance
+was 2.959003 Angstrom; calibration O-H lengths were 0.916407–1.010001
+Angstrom and minimum angle sine was 0.950529. These atoms remain unchanged
+within each map evaluation; they still move across trajectory frames.
+
+| Parameter noise amplitude | Geometry/inverse gates | Max inverse error (Angstrom) | Max independent logdet discrepancy | Max directional finite-difference error |
+|---|---|---:|---:|---:|
+| 0 | 6/6 sampled frames pass | 1.899636e-11 | 8.248957e-14 | 2.712980e-9 |
+| 0.001 | 6/6 sampled frames pass | 1.903899e-11 | 4.552955e-14 | 3.230351e-9 |
+| 0.03 | First frame (train 401) fails; remaining frames not evaluated | 3.197442e-14 at failure | Not evaluated | Not evaluated |
+
+Independent determinants and finite differences were measured only at
+train 726 and validation 1275 for each completed amplitude. At amplitude
+0.03, bond maximum was **3.103457 Angstrom** and ligand displacement was
+**8.676873 Angstrom**, exceeding the unchanged 2.5 and 2.0 Angstrom gates.
+Inverse/logdet closure alone at this failed geometry is not acceptance.
+Random parameter stress is not optimizer training and neither predicts
+nor establishes physical training stability.
+
+The focused independent review found no fundamental error in derivative
+scope or training-only calibration. For a map `(ligand, environment) ->
+(f(ligand, environment), environment)`, the full Jacobian is block triangular;
+its determinant equals the ligand block differentiated with environment
+held constant. All results remain sampled/local. The original-map derivative
+has not received an independent finite-difference check. Water proximity,
+periodic continuity, and useful conditioning throughout actual training
+remain unestablished; this is not a reproduction of the paper's complete
+conditioning setup. No physical training steps or QM energies occurred
+in either new coordinate experiment. No held-out test frames were used.
+
+## Reviewable next action: three real-QM/MM updates
+
+**Decision pending; do not dispatch yet.** Add the locked three solvent
+conditioning/reference atoms above for a separate three-update pilot on
+this development branch. This changes conditioning atom selection/model
+representation and requires the methodological decision in the recovery
+handoff. Existing trained weights cannot be treated as the new map's checkpoint.
+
+After approval:
+
+1. Lock the exact reference identity and original trajectory transformations.
+   Check unsplit/noncollinear reference geometry across all 650 training and
+   250 validation configurations before optimization. Abort if this convention
+   fails; do not choose another water using validation outcomes. Preserve the
+   original 32-frame training-only spline calibration and seed.
+2. Use fresh one-layer MixedMAF weights, the first three original training
+   batches (batch size 2), AdamW lr 1e-4, weight decay 0, float64, the same
+   temperature/objective, and actual pinned GROMACS/tblite mechanical-embedding
+   QM/MM energies and forces. No Hamiltonian or loss changes.
+3. Before and after each update, enforce original geometry, fixed-environment,
+   inverse and closure gates on the same six training/validation frames.
+   After the third update, independently check full Cartesian determinants
+   and directional finite differences at train 726 and validation 1275.
+   Record finite energies/forces, nonzero physical gradient, parameter changes,
+   checkpoint reload agreement, provenance and all failures. Cap the pilot
+   at 60 workflow minutes / 40 execution minutes with no automatic retry.
+
+No full epoch, held-out test evaluation, benchmark success claim, or merge is
+included in that decision. A successful three-update pilot would support
+considering a bounded extended benchmark, not establish convergence or
+free-energy accuracy. PR #14 stays draft and `main` stays unchanged.
