@@ -35,6 +35,16 @@ class SequentialTrainingPotential(torch.nn.Module):
         super().__init__()
         self.embedding = embedding
 
+    @property
+    def positions_unit(self):
+        """Use the existing GROMACS potential's pint registry and Å units."""
+        return self.embedding.mm_full.positions_unit
+
+    @property
+    def energy_unit(self):
+        """Match the GROMACS/tblite output unit used in training loss."""
+        return self.embedding.mm_full.energy_unit
+
     def _call(self, positions, cells, target):
         if (positions.ndim != 2 or positions.shape[1] % 3
                 or positions.shape[0] == 0 or cells.shape != (len(positions), 6)):
@@ -84,8 +94,105 @@ def verify_jacobian():
                 analytic=float(predicted), abs_error=err)
 
 
+
+def real_mixedmaf_integration(potential, trajectory_path, ligand_indices,
+                              reference_positions, reference_box):
+    """Small *real* upstream MixedMAF forward/backward checkpoint, no optimizer.
+
+    Trainability here means actual flow-parameter gradients through real
+    mechanical-embedding forces; a stable learning experiment is B2.4.
+    """
+    import tfep.app.mixedmaf
+    import tfep.io
+
+    # Analyze only 12 distinct archived production frames for fast flow
+    # initialization. The full original XTC and TPR supply real atom identities,
+    # topology, coordinates and original periodic cells, with B2.1 transforms.
+    subset = np.linspace(401, 2400, 12, dtype=int)
+    class RealWaterMixedMAF(tfep.app.mixedmaf.MixedMAFMap):
+        def create_universe(self):
+            u = mda.Universe(str(ROOT / "archived-eq.tpr"),
+                             str(trajectory_path))
+            register_trajectory_transformations(u, ligand_indices)
+            return u
+
+        def create_dataset(self):
+            return tfep.io.TrajectorySubset(super().create_dataset(), subset)
+
+    registry = potential.energy_unit._REGISTRY
+    mapper = RealWaterMixedMAF(
+        potential_energy_func=potential,
+        topology_file_path=str(ROOT / "archived-eq.tpr"),
+        coordinates_file_path=str(trajectory_path),
+        temperature=TEMPERATURE_K * registry.kelvin,
+        mapped_atoms=ligand_indices.tolist(),
+        batch_size=2,
+        n_maf_layers=1,  # Only an upstream architectural smoke, not paper training.
+        tfep_logger_dir_path=str(OUT / "mixedmaf-logs"),
+    )
+    t0 = time.perf_counter()
+    mapper.setup("fit")
+    thermal_energy = float(mapper._kT)
+    if abs(thermal_energy - 1/BETA) > 1e-9:
+        raise AssertionError("TFEP thermal energy is not kJ/mol")
+    samples = [mapper.dataset[i] for i in range(2)]
+    positions = torch.stack([a["positions"] for a in samples]).to(torch.float64)
+    cells = torch.stack([a["dimensions"] for a in samples]).to(torch.float64)
+    input_error = float((positions[0] - reference_positions[0].detach()).abs().max())
+    box_error = float((cells[0] - reference_box[0]).abs().max())
+    if input_error > 1e-5 or box_error > 1e-4:
+        raise AssertionError("Upstream dataset changed archived frame coordinates/box")
+    output = mapper({"positions": positions})
+    mapped = output["positions"]
+    logdet = output["log_det_J"]
+    if mapped.shape != positions.shape or logdet.shape != (2,):
+        raise AssertionError("Original MixedMAF output shape mismatch")
+    # Only ligand atoms can move; untouched solvent/environment must survive
+    # original full-coordinate ordering.
+    env = torch.ones(positions.shape[1] // 3, dtype=torch.bool)
+    env[torch.as_tensor(ligand_indices, dtype=torch.long)] = False
+    fixed_error = float((mapped.reshape(2, -1, 3)[:, env] -
+                         positions.reshape(2, -1, 3)[:, env]).abs().max())
+    if fixed_error > 1e-10:
+        raise AssertionError("Flow moved nominally fixed water atoms")
+    target = potential(mapped, cells)
+    loss = (target / mapper._kT - logdet).mean()
+    parameters = [p for p in mapper._flow.parameters() if p.requires_grad]
+    gradients = torch.autograd.grad(loss, parameters, allow_unused=True)
+    finite_gradients = [g for g in gradients if g is not None]
+    if (len(parameters) == 0 or len(finite_gradients) == 0
+            or not torch.isfinite(target).all() or not torch.isfinite(logdet).all()
+            or not torch.isfinite(loss)
+            or not all(torch.isfinite(g).all() for g in finite_gradients)):
+        raise AssertionError("Real upstream MixedMAF forward/loss/backward failed")
+    nonzero_gradients = sum(int(torch.count_nonzero(g) > 0) for g in finite_gradients)
+    if nonzero_gradients == 0:
+        raise AssertionError("MixedMAF did not receive any trainable gradient")
+    return dict(
+        architecture="pinned tfep.app.mixedmaf.MixedMAFMap; 1 layer, ligand-only",
+        claim="One upstream forward/backward, no optimizer, no convergence/DF claim",
+        dataset_archive_indices=subset.tolist(),
+        train_batch_archive_indices=subset[:2].tolist(),
+        input_shape=list(positions.shape), output_shape=list(mapped.shape),
+        logdet_shape=list(logdet.shape),
+        thermal_energy_kj_mol=thermal_energy,
+        coordinate_replay_max_error_angstrom=input_error,
+        cell_replay_max_error_angstrom_degrees=box_error,
+        fixed_environment_max_error_angstrom=fixed_error,
+        target_kj_mol=target.detach().tolist(),
+        logdet=logdet.detach().tolist(),
+        mean_reduced_target_minus_logdet=float(loss.detach()),
+        trainable_parameter_tensors=len(parameters),
+        gradient_tensors=len(finite_gradients),
+        nonzero_gradient_tensors=nonzero_gradients,
+        largest_abs_parameter_gradient=max(float(g.detach().abs().max())
+                                           for g in finite_gradients),
+        seconds=time.perf_counter() - t0,
+    )
+
 def main():
     torch.set_num_threads(1)
+    torch.set_default_dtype(torch.float64)
     for path in (ROOT, OUT, B1_OUT):
         path.mkdir(parents=True, exist_ok=True)
     raw = load_archive()
@@ -233,6 +340,9 @@ def main():
                             seconds=time.perf_counter()-start)
     if repeat_error > 1e-5:
         raise AssertionError("Repeated-call mismatch")
+    result["upstream_mixedmaf"] = real_mixedmaf_integration(
+        potential, xtc_path, idx, positions, cells)
+    save()
     result["validated"] = True
     save()
     print("B23_TRAINING_INTERFACE_VALIDATED", json.dumps(

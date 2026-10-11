@@ -113,3 +113,27 @@ numerically checked invertible mapping semantics. It does **not** establish
 a functioning or optimized published MixedMAF, statistical overlap,
 meaningful ESS, unbiased MD sampling, or a free-energy result. Those are
 separate scientific gates in B2.4 and beyond.
+
+## B2.3 upstream TFEP interface repair and revalidation
+
+An independent review discovered the serial adapter lacked the
+`positions_unit` and `energy_unit` properties read by the pinned
+`TFEPMapBase` and `MixedMAFMap` constructors. The adapter now delegates
+both to its existing full-MM GROMACS potential, preserving its exact pint
+registry, Å and kJ/mol conventions. The dedicated Actions workflow also now
+watches **its own** workflow YAML in its push path filters.
+
+The real-trajectory checkpoint now includes a *genuine pinned-upstream
+`MixedMAFMap`* constructed on the archived TPR and a 12-frame temporal
+subset of the same transformed XTC trajectory. It tests thermal-energy
+units, actual coordinate/box correspondence, ligand-only mapping (all water
+atoms fixed), finite mapped-target energies and log-Jacobians, and one actual
+flow-parameter gradient of the upstream reverse-KL target-plus-Jacobian
+objective through the real QM/MM autograd backend. One MAF layer is used
+to keep the interface test inexpensive. No optimizer, loss convergence,
+held-out validation, or QM/MM flow-training result is claimed here; those
+belong in B2.4.
+
+**Status:** Source repair proposed; require a *new* green dedicated molecular
+Actions run on the repaired source and its uploaded JSON audit before updating
+this status to scientifically accepted.
