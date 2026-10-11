@@ -212,7 +212,7 @@ def evaluate(mapper, potential, samples, ref, fixed, phase, epoch, csv_writer,
     return rows, time.perf_counter() - start
 
 
-def train_epoch(mapper, potential, samples, optimizer, deadline, epoch):
+def train_epoch(mapper, potential, samples, optimizer, deadline, epoch, on_step=None):
     rng = np.random.default_rng(SEED + epoch)
     order = rng.permutation(len(samples))
     params = [p for p in mapper._flow.parameters() if p.requires_grad]
@@ -261,10 +261,13 @@ def train_epoch(mapper, potential, samples, optimizer, deadline, epoch):
                     "jacobian_gradient_l2", "combined_gradient_l2")) <= 0
                     or closure > 1e-7):
                 raise AssertionError("Physical/Jacobian gradient decomposition failed")
+        gradient_l2 = grad_norm(grads) if on_step is not None else None
         optimizer.step()
         if not all(bool(torch.isfinite(p).all()) for p in params):
             raise FloatingPointError("Nonfinite model parameter")
         values.append(float(loss.detach()))
+        if on_step is not None:
+            on_step(len(values), mapper, gradient_l2)
         if len(values) % 50 == 0:
             print("B25_TRAIN_PROGRESS", epoch, len(values), len(order)//BATCH,
                   "last_objective", values[-1], flush=True)
@@ -272,10 +275,64 @@ def train_epoch(mapper, potential, samples, optimizer, deadline, epoch):
                 gradient_audit=first_grad, seconds=time.perf_counter()-started)
 
 
-def benchmark(max_minutes, preflight=False):
+
+def detailed_inverse_probe(mapper, positions, fixed):
+    """Localize inverse error without modifying the map or relaxing limits.
+
+    Separate rational-quadratic spline inversion with *exact* conditioner
+    parameters from autoregressive inversion and mixed->Cartesian conversion.
+    This is diagnostic only, never used to accept a trained model.
+    """
+    with torch.no_grad():
+        x = positions[None, :]
+        out = mapper({"positions": x})
+        inv = mapper.inverse({"positions": out["positions"]})
+        partial = mapper._flow
+        mixed = partial.flow
+        ligand = x[:, partial._propagated_indices]
+        z, _, origin, rotation = mixed.cartesian_to_mixed(ligand)
+        z_out, zj = mixed.flow(z)
+        z_inv, iz_j = mixed.flow.inverse(z_out)
+        maf = mixed.flow[0]
+        true_parameters = maf.get_transformer_parameters(z)
+        direct_inv, direct_lj = maf._transformer.inverse(z_out, true_parameters)
+        fixed_error = float((out["positions"] - x).reshape(1, -1, 3)[:, fixed].abs().max())
+        d = (z_inv - z).abs().flatten()
+        v, ix = torch.topk(d, min(8, len(d)))
+        result = dict(
+            cartesian_inverse_max_abs_angstrom=float((inv["positions"]-x).abs().max()),
+            cartesian_logjac_closure=float((out["log_det_J"]+inv["log_det_J"]).abs().max()),
+            fixed_environment_error_angstrom=fixed_error,
+            mixed_inverse_max_abs=float(d.max()),
+            mixed_logjac_closure=float((zj + iz_j).abs().max()),
+            direct_spline_inverse_max_abs=float((direct_inv-z).abs().max()),
+            direct_spline_logjac_closure=float((zj + direct_lj).abs().max()),
+            worst_mixed_dof_indices=ix.tolist(),
+            worst_mixed_dof_errors=v.tolist(),
+            details_by_transformer=[],
+        )
+        transformer = maf._transformer
+        pieces = torch.tensor_split(true_parameters, transformer._parameters_split_indices, dim=1)
+        for i, (t, par) in enumerate(zip(transformer._transformers, pieces)):
+            ind = getattr(transformer, f"_indices{i}")
+            data = dict(transformer=t.__class__.__name__, n_features=len(ind),
+                        maximum_local_inverse_error=(float((direct_inv[:, ind]-z[:, ind]).abs().max())
+                          if len(ind) else 0.0))
+            if hasattr(t, "_get_parameters") and len(ind):
+                _x0, _y0, widths, heights, slopes, shifts = t._get_parameters(par)
+                data.update(min_width=float(widths.min()), min_height=float(heights.min()),
+                            min_slope=float(slopes.min()), max_slope=float(slopes.max()),
+                            max_abs_parameter=float(par.abs().max()))
+            result["details_by_transformer"].append(data)
+        return result
+
+
+def benchmark(max_minutes, preflight=False, diagnose_inverse=False):
     global OUT
     if preflight:
         OUT = OUT / "preflight"
+    elif diagnose_inverse:
+        OUT = OUT / "inverse-diagnostic"
 
     started = time.perf_counter()
     deadline = started + 60 * max_minutes
@@ -402,6 +459,47 @@ def benchmark(max_minutes, preflight=False):
         if not preflight and any(abs(t-5.0) > 0.1 for t in result["frame_spacing_ps"].values()):
             raise AssertionError("Expected 5-ps archive frame spacing")
         record(destination, result)
+
+        if diagnose_inverse:
+            probe_x = samples["train"][len(samples["train"])//2]["positions"]
+            diag = dict(checkpoint="B2.5 epoch-1 inverse scientific localization",
+                        diagnostic_only=True, validated=False, seed=SEED,
+                        original_optimizer={"lr": LR, "weight_decay": 0, "batch_size": BATCH},
+                        original_frame_indices=[int(i) for i in TRAIN],
+                        trajectory_frames=len(universe.trajectory),
+                        stages=[], first_failure_step=None)
+            diagnostic_json = OUT / "inverse-diagnostic.json"
+            diag["before_training"] = detailed_inverse_probe(mapper, probe_x, fixed)
+            record(diagnostic_json, diag)
+            def observe(step, trained_mapper, gradient_l2):
+                if step % 25 and step != 325:
+                    return
+                m = detailed_inverse_probe(trained_mapper, probe_x, fixed)
+                m["optimizer_step"] = step
+                m["gradient_l2_before_step"] = float(gradient_l2)
+                diag["stages"].append(m)
+                is_bad = (m["cartesian_inverse_max_abs_angstrom"] > 1e-5
+                          or m["cartesian_logjac_closure"] > 1e-5)
+                if is_bad and diag["first_failure_step"] is None:
+                    diag["first_failure_step"] = step
+                    torch.save({"state_dict": trained_mapper._flow.state_dict(),
+                                "step": step, "seed": SEED}, OUT / "first-invalid.pt")
+                record(diagnostic_json, diag)
+                print("B25_INVERSE_DIAGNOSTIC", json.dumps(m, allow_nan=False), flush=True)
+            epoch_info = train_epoch(mapper, potential, samples["train"],
+                                     optimizer, deadline, 1, on_step=observe)
+            diag["stage"] = "complete"
+            diag["epoch_info"] = epoch_info
+            diag["final_geometry_passes_original_gate"] = (
+                diag["stages"][-1]["cartesian_inverse_max_abs_angstrom"] <= 1e-5
+                and diag["stages"][-1]["cartesian_logjac_closure"] <= 1e-5)
+            torch.save({"state_dict": mapper._flow.state_dict(), "step": 325,
+                        "seed": SEED}, OUT / "last-epoch1.pt")
+            record(diagnostic_json, diag)
+            print("B25_INVERSE_DIAGNOSTIC_COMPLETE",
+                  json.dumps({"first_failure_step": diag["first_failure_step"],
+                              "last": diag["stages"][-1]}, allow_nan=False), flush=True)
+            return
 
         ref = {}
         reference_started = time.perf_counter()
@@ -546,7 +644,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--scientific-minutes", type=float, default=165)
     parser.add_argument("--preflight", action="store_true")
+    parser.add_argument("--diagnose-inverse", action="store_true")
     args = parser.parse_args()
     if not 1 <= args.scientific_minutes <= 165:
         parser.error("scientific budget must lie in [1, 165] minutes")
-    benchmark(args.scientific_minutes, preflight=args.preflight)
+    benchmark(args.scientific_minutes, preflight=args.preflight, diagnose_inverse=args.diagnose_inverse)
