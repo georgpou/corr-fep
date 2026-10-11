@@ -1,0 +1,1 @@
+One-off B2.5 inverse failure localization (unchanged epoch-one optimizer and train-only data). Do not evaluate validation or test data. Observe every 25 optimization steps and save first invalid and final map checkpoints. 2026-10-11.
