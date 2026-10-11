@@ -1,0 +1,1 @@
+Verify original author-conditioned six-layer MixedMAF checkpoints 5, 10, 15, 20 and 21 on 16 fixed validation frames; verify exact preprocessing replay and QM/MM results; do not touch test.
