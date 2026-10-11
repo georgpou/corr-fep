@@ -1,5 +1,7 @@
 # B2.5 Cartesian coordinate recovery
 
+> Current audit handoff: [AUTHOR_RECOVERY_AUDIT_LOG_2026-10-11.md](AUTHOR_RECOVERY_AUDIT_LOG_2026-10-11.md). The user authorized author-method recovery; the three-update physical pilot completed successfully. This document preserves earlier diagnostic/proposal history. Its older pending-approval and next-run statements are superseded by the audit handoff.
+
 ## Initial evidence
 
 The original epoch-1 diagnostic is Actions run 38148045379 at commit

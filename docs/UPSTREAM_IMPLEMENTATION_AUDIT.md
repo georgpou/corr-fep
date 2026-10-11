@@ -1,5 +1,7 @@
 # Upstream implementation audit — 2026-10-11
 
+> Current audit handoff: [AUTHOR_RECOVERY_AUDIT_LOG_2026-10-11.md](AUTHOR_RECOVERY_AUDIT_LOG_2026-10-11.md). The user authorized author-method recovery; the three-update physical pilot completed successfully. This document preserves earlier diagnostic/proposal history. Its older pending-approval and next-run statements are superseded by the audit handoff.
+
 ## Decision and scope
 
 The user's direction is to build Corr-FEP on the authors' coding foundation,

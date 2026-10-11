@@ -1,0 +1,38 @@
+{
+  "artifact_arithmetic_only": true,
+  "new_molecular_calculations": 0,
+  "source_run": 38154651608,
+  "kT_kj_mol": 2.477709860209666,
+  "online_row_count": 96,
+  "online_unique_frames": 96,
+  "validation_row_count": 16,
+  "online_work_max_abs_recomputation_error": 0.0,
+  "validation_work_max_abs_recomputation_error": 0.0,
+  "validation_metrics": {
+    "identity": {
+      "recomputed": {
+        "n": 16,
+        "mean_reduced_work": -86905.0561796652,
+        "reduced_work_std": 8.670024961747218,
+        "weight_ess": 1.8310877701480852,
+        "delta_f_kj_mol": -215351.66685255262
+      },
+      "max_abs_difference_from_report": 2.220446049250313e-16
+    },
+    "mapped": {
+      "recomputed": {
+        "n": 16,
+        "mean_reduced_work": -86907.80936250226,
+        "reduced_work_std": 6.906032363474717,
+        "weight_ess": 1.5573630298742975,
+        "delta_f_kj_mol": -215354.55149783444
+      },
+      "max_abs_difference_from_report": 0
+    }
+  },
+  "partition_and_count_checks_passed": true,
+  "report_snapshot_sha256": {
+    "training-pilot.json": "9d5dbbe8d14e72dd4f8e613aa8d5509563aa44fa84ec0ce4bd4c4b99cd446b65",
+    "coordinate-probe.json": "f9aedc626b0a12ed497f898e1106bcef685d9a20cccf73c278a095570f54b884"
+  }
+}

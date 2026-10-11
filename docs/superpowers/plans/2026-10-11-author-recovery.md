@@ -50,3 +50,8 @@ Inspect artifacts, independently recompute work and recorded determinants, reque
 
 - Task 1 complete: Actions 38153394950 confirmed U1 (58 wrong-element slots / 44 waters) and U3 (water movement overwritten); U2 not triggered.
 - Task 2 static review: no blocking API/implementation issue; preserve failure rows/current weights and distinguish cached conditional validity from global estimator validity.
+
+- Task 2 complete: Actions38153970197 passed original geometry, independent full ligand Cartesian derivatives, all900 reference triples and strict reload.
+- Task 3 bounded pilot complete: Actions38154651608 at7d59c1ce2021edf81928611ba68b59d80b6971fd completed3 updates/96 frames and16-frame frozen validation; work std8.67→6.91, ESS1.83→1.56. Full650/250/300 recovery benchmark and hypothesis comparison remain unexecuted.
+- Task 4 documentation/arithmetic audit complete: see docs/AUTHOR_RECOVERY_AUDIT_LOG_2026-10-11.md and docs/evidence/2026-10-11-author-recovery. All recorded work arithmetic reproduced; independent external audit requested by user. PR remains draft/unmerged.
+- Known reviewer note retained for independent audit: move the explicit logj finite check before QM in a follow-up; tested pilot source is unchanged by documentation.

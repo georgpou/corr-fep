@@ -1,5 +1,7 @@
 # Corr-FEP Stage B2.5 — Scientific Integrity Recovery Handoff
 
+> Current audit handoff: [AUTHOR_RECOVERY_AUDIT_LOG_2026-10-11.md](AUTHOR_RECOVERY_AUDIT_LOG_2026-10-11.md). The user authorized author-method recovery; the three-update physical pilot completed successfully. This document preserves earlier diagnostic/proposal history. Its older pending-approval and next-run statements are superseded by the audit handoff.
+
 **Date:** 2026-10-11 (Europe/Copenhagen). **Branch:** `stage-b/extended-cloud-benchmark`.  
 **Repository:** https://github.com/georgpou/corr-fep  
 **Draft PR:** https://github.com/georgpou/corr-fep/pull/14 (target `main`; do not merge without explicit user approval).
