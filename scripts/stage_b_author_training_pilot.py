@@ -28,6 +28,41 @@ def save_weights(mapper,optimizer,scheduler,path,step,metadata):
         step=step,seed=SEED,metadata=metadata),path)
 
 
+def small_validation(mapper,potential,u,ligand_idx,fixed,bonds,report,path):
+    """Paired frozen-map versus identity comparison; no fitting or test use."""
+    indices=np.unique(np.linspace(VALIDATION[0],VALIDATION[-1],16,dtype=int))
+    benchmark=dict(frame_indices=indices.tolist(),rows=[],checkpoint_selection='fixed final update 3')
+    report['small_validation_benchmark']=benchmark
+    frozen=[p.detach().clone() for p in mapper._flow.parameters()]
+    with torch.no_grad():
+        for frame in indices:
+            s=sample(u,int(frame)); x=s['positions'][None,:]; cell=s['cell'][None,:]
+            geometry=check_geometry(BoundFrame(mapper,int(frame)),s['positions'],fixed,bonds,ligand_idx)
+            mapped=mapper(dict(positions=x,trajectory_sample_index=torch.tensor([int(frame)])))
+            reference=potential.reference(x,cell)[0]
+            identity=potential(x,cell)[0]
+            target=potential(mapped['positions'],cell)[0]
+            iw=(identity-reference)/mapper._kT
+            mw=(target-reference)/mapper._kT-mapped['log_det_J'][0]
+            check_finite(iw,'identity validation work'); check_finite(mw,'mapped validation work')
+            benchmark['rows'].append(dict(frame_index=int(frame),geometry=geometry,
+                reference_mm_kj_mol=float(reference),identity_target_qmmm_kj_mol=float(identity),
+                mapped_target_qmmm_kj_mol=float(target),log_jacobian=float(mapped['log_det_J'][0]),
+                identity_reduced_work=float(iw),mapped_reduced_work=float(mw)))
+            record(path,report)
+    for label,key in [('identity','identity_reduced_work'),('mapped','mapped_reduced_work')]:
+        w=np.asarray([row[key] for row in benchmark['rows']]); logw=-w; shift=logw.max()
+        weights=np.exp(logw-shift); normalized=weights/weights.sum()
+        benchmark[label]=dict(n=len(w),mean_reduced_work=float(w.mean()),
+            reduced_work_std=float(w.std(ddof=1)),weight_ess=float(1/np.sum(normalized**2)),
+            delta_f_kj_mol=float(-float(mapper._kT)*(shift+np.log(weights.mean()))))
+    if any(not torch.equal(p.detach(),start) for p,start in zip(mapper._flow.parameters(),frozen)):
+        raise AssertionError('Validation altered frozen map parameters')
+    benchmark.update(completed=True,parameters_unchanged=True,
+        limitation='16 correlated validation samples: diagnostic comparison only, no uncertainty or hypothesis claim; test remains unused.')
+    record(path,report)
+
+
 def main():
     OUT.mkdir(parents=True,exist_ok=True)
     path=OUT/'training-pilot.json'
@@ -119,8 +154,9 @@ def main():
         if change<=0: raise AssertionError('Physical optimization did not change parameters')
         report['parameter_change_l2']=change
         report['checkpoint_reload']=checkpoint_reload(mapper,potential,u,ligand_idx,preprocessing,OUT,OUT/'trained-map.pt')
+        small_validation(mapper,potential,u,ligand_idx,fixed,bonds,report,path)
         report.update(stage='complete',physical_training_gate_passed=True,
-            limitation='96 samples / 3 updates establishes a bounded integration gate, not convergence, unbiased free energy or paper reproduction. No held-out test used.')
+            limitation='96 samples / 3 updates and 16-frame frozen validation comparison: bounded integration, not convergence, unbiased free energy or paper reproduction. No held-out test used.')
         record(path,report)
         print('B25_AUTHOR_PHYSICAL_TRAINING_GATE_COMPLETE',flush=True)
     except Exception as exc:
