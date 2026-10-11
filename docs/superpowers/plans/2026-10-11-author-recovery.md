@@ -47,3 +47,6 @@ Inspect artifacts, independently recompute work and recorded determinants, reque
 - Ruling: inspect U3 but keep environment-only conditioning now; mapped-solvent extension is outside this recovery.
 
 - Task 1 execution: Actions 38152838415 failed before source audit because TPR was not materialized. Corrected raw TPR write; no numerical/source conclusion from that run.
+
+- Task 1 complete: Actions 38153394950 confirmed U1 (58 wrong-element slots / 44 waters) and U3 (water movement overwritten); U2 not triggered.
+- Task 2 static review: no blocking API/implementation issue; preserve failure rows/current weights and distinguish cached conditional validity from global estimator validity.

@@ -3,8 +3,10 @@
 ## Decision and scope
 
 The user's direction is to build Corr-FEP on the authors' coding foundation,
-with departures justified explicitly. No new physical pilot is approved by
-this source audit. The previous single-water O/H/H candidate is diagnostic
+with departures justified explicitly. The user subsequently authorized all
+proposed investigations and author-method physical training on 2026-10-11.
+Coordinate validity remains the gate before physical training; merging still
+requires separate approval. The previous single-water O/H/H candidate is diagnostic
 evidence only; its proposed adoption is superseded by the source-informed
 proposal below. It is not an implementation of the authors' preprocessing.
 
@@ -194,3 +196,35 @@ simultaneously and attribute the outcome to a single cause.
 Substantial reuse of the driver must retain its MIT copyright/license notice
 (Copyright 2021 Andrea Rizzi). Its hardware-specific SLURM/paths can be adapted
 for Actions and the later H200 cluster without changing the method.
+
+
+## Actual-topology confirmation and authorized recovery
+
+Actions [38153394950](https://github.com/georgpou/corr-fep/actions/runs/38153394950),
+commit `715c727a0de88441cb19db36182278f666dfb99a`, completed the focused source audit.
+On three archived training snapshots, the unmodified helper selected 44 reference
+waters (132 atoms); its pre-sort assignment placed the wrong element into 58
+reference slots. This confirms U1 on the actual topology. Its returned matching
+table is sorted correctly; the defective intermediate positions affect the
+stability statistics used for reference selection. The local adapter corrects
+that intermediate slot ordering, retains the upstream algorithm, and archives
+the adapted helper with the original MIT notice.
+
+The actual released `PermutationFlow` also erased a proposed 0.001 Angstrom
+reference-water displacement under identity matching (observed output zero),
+confirming U3's mapped-water overwrite. This recovery maps only ligand atoms,
+so it does not require a mapped-solvent rewrite. U2 does not trigger on these
+44 heavy candidates; its conditional small-candidate defect remains logged.
+No energy evaluations or physical updates occurred in this source audit.
+
+Reference counts inherit the author's exclusion of local frame zero: 649
+training frames determine neighbor counts; all 650 training frames determine
+matching/stability and triple admissibility. Validation only applies frozen
+training selections. Cached assignments define per-frame conditional inverse
+and determinant checks; they do not establish global invertibility under
+recomputed matching. Historical publication impact is not established.
+
+The next authorized gate is the six-layer author-conditioned coordinate probe.
+A passing gate permits the 96-sample, three-update physical pilot with the
+author optimizer settings. This is a bounded integration experiment, not
+convergence or reproduction of the publication's complete multimap estimator.
