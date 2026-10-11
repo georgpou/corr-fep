@@ -26,7 +26,8 @@ jobs:
       - name: Inspect checkpoint files and validation weight concentration
         run: |
           set -euo pipefail
-          python -u scripts/stage_b_baseline_artifact_inspection.py saved-baseline/full-baseline.json results/inspection
+          zip -0 -q -r saved-baseline.zip saved-baseline
+          python -u scripts/stage_b_baseline_artifact_inspection.py saved-baseline.zip results/inspection
       - name: Upload inspection summary
         if: always()
         uses: actions/upload-artifact@v4
