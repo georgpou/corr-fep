@@ -1,0 +1,1 @@
+One explicitly authorized continuation/retry after diagnosed preflight scratch-directory collision on run 38136789727. Workflow resets scratch after successful preflight. Do not trigger further retries automatically.
