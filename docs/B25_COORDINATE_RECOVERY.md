@@ -178,6 +178,13 @@ in either new coordinate experiment. No held-out test frames were used.
 
 ## Reviewable next action: three real-QM/MM updates
 
+**Superseded proposal:** after the user requested grounding in the original
+code, adoption of these O/H/H indices was withdrawn as the recommended next
+action. See [upstream implementation audit](UPSTREAM_IMPLEMENTATION_AUDIT.md)
+for the original matched-water/heavy-atom pipeline, issue log and revised
+proposal. The evidence above remains unchanged; no physical run is approved.
+
+
 **Decision pending; do not dispatch yet.** Add the locked three solvent
 conditioning/reference atoms above for a separate three-update pilot on
 this development branch. This changes conditioning atom selection/model

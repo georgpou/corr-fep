@@ -107,3 +107,20 @@ by these recovery experiments. No full rerun or merge is authorized by the
 proposal. PR #14 remains draft; main is unchanged. The original hourly status
 task tracks these completed results and the pending decision; it does not
 execute computations or modify/merge code.
+
+
+## User steering and source audit — 2026-10-11
+
+The user requested building upon the original coding foundation and logging
+suspected upstream bugs for discussion. Read `docs/UPSTREAM_IMPLEMENTATION_AUDIT.md`
+next. It supersedes the exact single-water O/H/H pilot proposal: the released
+code matches spatial water roles and chooses stable noncollinear conditioning
+heavy atoms. No adoption or physical run has been approved. Two focused
+bookkeeping checks support an ordering issue in reference-stability statistics
+and a conditional candidate-loop bounds issue; permutation output restoration
+has an additional static concern when solvent is mapped. Publication impact
+is unknown. Preserve these classifications and discuss any correction before
+porting it. The current driver and MixedMAF file contents match the inspected
+pins. Keep our original physics, clean held-out split and scientific gates;
+prepare the original preprocessing pattern with explicit attribution and
+training-only fitting before revising the physical pilot.
