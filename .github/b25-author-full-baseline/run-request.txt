@@ -1,0 +1,1 @@
+2026-10-11: execute 1 epoch, all 650 training frames and 250 frozen validation frames; original author ligand-aligned water mapping, six-layer MixedMAF. Never evaluate test frames.
