@@ -1,0 +1,1 @@
+Read original completed run 38173132836; analyze 250 held-out validation weights and check five saved optimizer checkpoints. No QM/MM training.
