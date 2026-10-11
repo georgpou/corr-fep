@@ -1,0 +1,98 @@
+name: Stage B2.5 - Environment only no-QM probe
+on:
+  workflow_dispatch:
+  push:
+    branches: ["stage-b/extended-cloud-benchmark"]
+    paths:
+      - ".github/b25-environment-only/run-request.txt"
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: stage-b25-environment-only-probe
+  cancel-in-progress: false
+jobs:
+  extended-benchmark:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      # Prevent >99 GROMACS automatic backup generations during thousands
+      # of sequential QM/MM single-point reruns; numerical inputs unchanged.
+      GMX_MAXBACKUP: "-1"
+      GROMACS_BUILD_ID: v2023.3-5e5ea27d8e594124d229a726616b7f6473f2c935-dp-cpu-threadmpi-fftw3-simdnone-v1
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install GROMACS FFTW runtime
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y libfftw3-double3
+      - name: Restore pinned double-precision GROMACS
+        id: gromacs-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ runner.temp }}/gromacs-install
+          key: gromacs-${{ runner.os }}-${{ runner.arch }}-ubuntu2404-${{ env.GROMACS_BUILD_ID }}
+      - name: Build pinned GROMACS on cache miss
+        if: steps.gromacs-cache.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          sudo apt-get install -y cmake g++ make libfftw3-dev
+          git clone --quiet --depth 1 --branch v2023.3 https://github.com/gromacs/gromacs.git "$RUNNER_TEMP/gromacs-src"
+          test "$(git -C "$RUNNER_TEMP/gromacs-src" rev-parse HEAD)" = 5e5ea27d8e594124d229a726616b7f6473f2c935
+          cmake -S "$RUNNER_TEMP/gromacs-src" -B "$RUNNER_TEMP/gromacs-build" \
+            -DCMAKE_INSTALL_PREFIX="$RUNNER_TEMP/gromacs-install" \
+            -DCMAKE_BUILD_TYPE=Release -DGMX_DOUBLE=ON \
+            -DGMX_MPI=OFF -DGMX_THREAD_MPI=ON -DGMX_GPU=OFF \
+            -DGMX_DEFAULT_SUFFIX=OFF -DGMX_FFT_LIBRARY=fftw3 \
+            -DGMX_BUILD_OWN_FFTW=OFF -DGMX_BUILD_UNITTESTS=OFF \
+            -DGMX_SIMD=None -DGMXAPI=OFF -DBUILD_TESTING=OFF \
+            -DGMX_INSTALL_NBLIB_API=OFF
+          cmake --build "$RUNNER_TEMP/gromacs-build" --parallel 4
+          cmake --install "$RUNNER_TEMP/gromacs-build"
+          echo "$GROMACS_BUILD_ID" > "$RUNNER_TEMP/gromacs-install/.corr-fep-build-id"
+      - name: Save GROMACS build
+        if: steps.gromacs-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ runner.temp }}/gromacs-install
+          key: ${{ steps.gromacs-cache.outputs.cache-primary-key }}
+      - name: Verify double-precision GROMACS
+        run: |
+          set -euo pipefail
+          mkdir -p results/stage-b/extended-cloud-benchmark
+          binary="$RUNNER_TEMP/gromacs-install/bin/gmx"
+          test -x "$binary"
+          test "$(cat "$RUNNER_TEMP/gromacs-install/.corr-fep-build-id")" = "$GROMACS_BUILD_ID"
+          "$binary" --version | tee results/stage-b/extended-cloud-benchmark/gromacs-version.txt
+          grep -Eiq '^ *Precision: +double' results/stage-b/extended-cloud-benchmark/gromacs-version.txt
+          ldd "$binary" | tee results/stage-b/extended-cloud-benchmark/gromacs-libraries.txt
+          ! grep -q 'not found' results/stage-b/extended-cloud-benchmark/gromacs-libraries.txt
+          echo "$RUNNER_TEMP/gromacs-install/bin" >> "$GITHUB_PATH"
+      - name: Install pinned QM/MM and MixedMAF libraries
+        run: |
+          python -m pip install "torch==2.4.0" --index-url https://download.pytorch.org/whl/cpu
+          python -m pip install "numpy==1.26.4" "MDAnalysis==2.7.0" "pint==0.24.4" "requests==2.32.3" "remotezip==0.12.3" "tblite==0.3.0" "pyedr==0.8.0"
+          python -m pip install "lightning==2.4.0" "networkx==3.3" "h5py==3.11.0" "einops==0.8.0"
+          python -m pip install --no-deps "git+https://github.com/noegroup/bgflow.git@fbba56fac3eb88f6825d2bd4f745ee75ae9715e1"
+          python -m pip install --no-deps "git+https://github.com/andrrizzi/tfep.git@0bc369a1194c688bb6ac997cc6b7c2db2b063c9e"
+      - name: Fetch pinned upstream topology and MDPs
+        run: |
+          git clone -q https://github.com/andrrizzi/paper-alchemical-tfep-qmmm-2026.git upstream-stage-b
+          git -C upstream-stage-b checkout -q b8dfd897ebd914b4e592221710b397a2758353ce
+      - name: Verify environment-only water-reference coordinates without QM
+        run: |
+          set -euo pipefail
+          mkdir -p results/stage-b/environment-only-probe
+          timeout 25m python -u scripts/stage_b_environment_only_probe.py \
+            2>&1 | tee results/stage-b/environment-only-probe/audit.log
+      - name: Upload numerical audit even on failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stage-b25-author-coordinate-probe
+          path: results/stage-b/environment-only-probe/*
+          if-no-files-found: warn
