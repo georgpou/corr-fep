@@ -16,8 +16,9 @@ For each archived XTC input x and flow output y=M(x),
 Reference FF energies are recomputed at the actual quantized XTC inputs
 and cached by selected frame. Never use source XVG/EDR energies here.
 
-The flow is initialized with 12 frames uniformly spanning archive indices
-401..2400. The training block is frames 401, 582, 764; held-out block
+The flow is initialized with 12 early-time frames spanning archive indices
+401..2000, excluding all held-out samples from spline-range calibration.
+The training block is frames 401, 582, 764; held-out block
 is 2218, 2400 (time-separated). Fixed RNG seed 20261011, three AdamW
 steps at 1e-4 (weight decay 0), serial 2-frame batches (401/582,
 582/764, 401/764). The held-out frames never enter the optimizer.
