@@ -266,7 +266,9 @@ def main():
     if not params:
         raise AssertionError("No flow parameters")
     initial = [p.detach().clone() for p in params]
-    torch.save({"state_dict": mapper._flow.state_dict(), "seed": SEED},
+    initial_flow_state = mapper._flow.state_dict()
+    initial_state_keys = tuple(initial_flow_state)
+    torch.save({"state_dict": initial_flow_state, "seed": SEED},
                OUT / "flow-before.pt")
     fixed = torch.ones(len(gro_xyz), dtype=torch.bool)
     fixed[torch.as_tensor(ligand_idx, dtype=torch.long)] = False
@@ -349,7 +351,12 @@ def main():
         writer = csv.DictWriter(file, fieldnames=before_rows[0].keys())
         writer.writeheader()
         writer.writerows(before_rows+after_rows)
-    torch.save({"state_dict": mapper._flow.state_dict(),
+    # PartialFlow populates a large deterministic index cache on first forward.
+    # Omit this derived buffer to keep both checkpoints strictly reloadable
+    # into freshly initialized upstream MixedMAF flows.
+    updated_flow_state = mapper._flow.state_dict()
+    portable_state = {key: updated_flow_state[key] for key in initial_state_keys}
+    torch.save({"state_dict": portable_state,
                 "optimizer_state_dict": optimizer.state_dict(),
                 "seed": SEED, "setup_frames": SETUP_FRAMES.tolist(),
                 "train_frames": result["training_frame_indices"],
