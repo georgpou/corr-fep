@@ -24,8 +24,9 @@ from stage_b_qm_singlepoint import ARCHIVE, GRO_NAME, load_archive
 
 OUT = Path("results/stage-b/first-flow-training").resolve()
 SEED, LR, STEPS = 20261011, 1e-4, 3
-SETUP_FRAMES = np.linspace(401, 2400, 12, dtype=int)
-TRAIN_ROWS, HELDOUT_ROWS = (0, 1, 2), (10, 11)
+SETUP_FRAMES = np.array([401, 582, 764, 946, 1128, 1310, 1492, 1674,
+                         1855, 1930, 1980, 2000], dtype=int)
+TRAIN_ROWS, HELDOUT_FRAMES = (0, 1, 2), (2218, 2400)
 STEP_ROWS = ((0, 1), (1, 2), (0, 2))
 
 
@@ -110,7 +111,7 @@ def main():
                       "weight_decay": 0, "steps": STEPS, "batch_size": 2},
         "setup_frame_indices": SETUP_FRAMES.tolist(),
         "training_frame_indices": [int(SETUP_FRAMES[i]) for i in TRAIN_ROWS],
-        "heldout_frame_indices": [int(SETUP_FRAMES[i]) for i in HELDOUT_ROWS],
+        "heldout_frame_indices": list(HELDOUT_FRAMES),
         "step_frame_indices": [
             [int(SETUP_FRAMES[i]) for i in pair] for pair in STEP_ROWS],
         "warning": (
@@ -184,8 +185,10 @@ def main():
     if abs(float(mapper._kT)-0.00831446261815324*TEMPERATURE_K) > 1e-9:
         raise AssertionError("Unexpected kT/energy units")
 
+    # Only the early training-era frames calibrate Z-matrix/spline ranges.
+    # Holdout is read separately, never through the mapper's setup dataset.
     samples, position_error, box_error = [], 0.0, 0.0
-    for row in TRAIN_ROWS + HELDOUT_ROWS:
+    for row in TRAIN_ROWS:
         item = mapper.dataset[row]
         x = item["positions"].to(torch.float64).detach()
         cell = item["dimensions"].to(torch.float64).detach()
@@ -196,11 +199,25 @@ def main():
             np.asarray(ts.dimensions, dtype=np.float64))
         position_error = max(position_error, float((x-independent_x).abs().max()))
         box_error = max(box_error, float((cell-independent_box).abs().max()))
-        check_finite(x, "input XTC"); check_finite(cell, "input box")
+        check_finite(x, "training XTC"); check_finite(cell, "training box")
         samples.append({
             "row": row, "positions": x, "cell": cell,
             "frame_index": int(SETUP_FRAMES[row]), "time_ps": float(ts.time),
-            "block": "train" if row in TRAIN_ROWS else "heldout",
+            "block": "train",
+        })
+    for frame_index in HELDOUT_FRAMES:
+        # Same upstream B2.1 unwrap/center/wrap transforms; no holdout
+        # coordinates inform flow initialization or optimizer gradients.
+        ts = universe.trajectory[frame_index]
+        x = torch.tensor(np.asarray(universe.atoms.positions, dtype=np.float64).copy()
+                         .reshape(-1), dtype=torch.float64)
+        cell = torch.tensor(np.asarray(ts.dimensions, dtype=np.float64).copy(),
+                            dtype=torch.float64)
+        check_finite(x, "held-out XTC"); check_finite(cell, "held-out box")
+        samples.append({
+            "row": frame_index, "positions": x, "cell": cell,
+            "frame_index": frame_index, "time_ps": float(ts.time),
+            "block": "heldout",
         })
     if position_error > 1e-5 or box_error > 1e-4:
         raise AssertionError("Upstream coordinate/cell replay mismatch")
