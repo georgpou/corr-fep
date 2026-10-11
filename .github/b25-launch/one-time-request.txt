@@ -1,2 +1,4 @@
 B2.5 one-time launch request, 2026-10-11.
 Run the small real-QM/MM preflight first; run the single bounded full benchmark only if it passes. This file is a one-time branch push trigger. Do not modify or re-push this marker to retry automatically.
+
+Explicit one-time retry after verified preflight scratch collision; 2026-10-11. Do not retry automatically.
