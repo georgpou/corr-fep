@@ -53,10 +53,11 @@ def environmental_sites(u, legacy_preprocessing, reference_frame):
     if not set(refs).issubset(set(oxygens)):
         raise AssertionError('Author selected non-water-oxygen reference; not supported by this probe')
     u.trajectory[int(reference_frame)]
-    environment = u.select_atoms('not resname MOL and not resname SOL and not element H').indices
-    if len(environment) == 0:
-        raise AssertionError('No stable environment anchor outside ligand/solvent')
-    anchor = int(environment[0])
+    nonsolvent = u.select_atoms('not resname MOL and not resname SOL and not element H').indices
+    # An isolated ligand-in-water box need not contain a non-solvent atom.
+    # Any *fixed physical environment atom* is a valid mathematical anchor.
+    # A water anchor may be physically noisy and must be evaluated separately.
+    anchor = int(nonsolvent[0]) if len(nonsolvent) else int(oxygens[0])
     box = u.dimensions.copy()
     if not np.allclose(box[3:], 90., atol=1e-5):
         raise AssertionError('Orthorhombic cell required for this prototype')
@@ -65,7 +66,8 @@ def environmental_sites(u, legacy_preprocessing, reference_frame):
     if not np.isfinite(sites).all():
         raise AssertionError('Nonfinite training reference sites')
     return dict(references=refs.tolist(), reference_frame=int(reference_frame),
-                candidate_oxygens=oxygens, template_sites=sites, anchor_atom=anchor)
+                candidate_oxygens=oxygens, template_sites=sites, anchor_atom=anchor,
+                anchor_kind='nonsolvent' if len(nonsolvent) else 'water_oxygen')
 
 
 class EnvironmentOnlyContextFlow(torch.nn.Module):
@@ -91,7 +93,7 @@ class EnvironmentOnlyContextFlow(torch.nn.Module):
         sites = self.template_sites.cpu().numpy()
         candidate = self.candidate_oxygens.cpu().numpy()
         anchor = x.detach().reshape(len(x), -1, 3)[:, self.anchor_atom].cpu().numpy()
-        boxes = np.asarray(box_lengths, dtype=np.float64)
+        boxes = torch.as_tensor(box_lengths).detach().cpu().numpy()
         physical = np.stack([candidate[assignment_from_environment(water, sites, a, box)]
                              for water, a, box in zip(env_xyz, anchor, boxes)])
         return torch.as_tensor(physical, dtype=torch.long, device=x.device)
@@ -125,9 +127,12 @@ class EnvironmentOnlyMixedMAF(AuthorMixedMAF):
         return EnvironmentOnlyContextFlow(partial, self.preprocessing, environment, return_partial)
 
     def forward(self, batch):
-        y, logj = self._flow(batch['positions'], batch['cell'][:, :3])
+        # TFEP's spline calibration passes 'dimensions'; physical pilot uses 'cell'.
+        cell = batch['cell'] if 'cell' in batch else batch['dimensions']
+        y, logj = self._flow(batch['positions'], cell[:, :3])
         return dict(positions=y, log_det_J=logj)
 
     def inverse(self, batch):
-        y, logj = self._flow.inverse(batch['positions'], batch['cell'][:, :3])
+        cell = batch['cell'] if 'cell' in batch else batch['dimensions']
+        y, logj = self._flow.inverse(batch['positions'], cell[:, :3])
         return dict(positions=y, log_det_J=logj)
