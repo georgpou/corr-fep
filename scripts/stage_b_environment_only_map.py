@@ -2,8 +2,8 @@
 """Experimental environment-only water conditioning for the author MixedMAF.
 
 The three *spatial sites* are fixed using one training frame. At evaluation time
-the matching uses only unchanged environment-water oxygen coordinates, never
-ligand coordinates or trajectory indices. This is a separate candidate, NOT a
+the matching uses an unchanged environment anchor and periodic minimum-image
+water offsets, never ligand coordinates or trajectory indices. This is a separate candidate, NOT a
 replacement for the published ligand-aligned matching algorithm.
 """
 import numpy as np
@@ -16,19 +16,26 @@ from stage_b_author_map import AuthorMixedMAF
 from stage_b_author_issue_audit import load_driver
 
 
-def assignment_from_environment(oxygen_positions, template_sites):
+def assignment_from_environment(oxygen_positions, template_sites, anchor_position, box_lengths):
     """Assign 3 distinct physical waters to 3 frozen spatial sites.
 
-    Coordinates are the existing, ligand-centered/box-wrapped representation.
-    The per-sample rule does not read the ligand coordinates. Using Cartesian
-    (not minimum-image) distances avoids gathering discontinuous PBC images
-    into the Cartesian reference geometry.
+    Use periodic water displacements relative to one fixed environment anchor.
+    This is invariant to global translation and to ligand-dependent water image
+    wrapping, provided the box is orthorhombic and transformations preserve the
+    physical environment configuration.
     """
     water = np.asarray(oxygen_positions, dtype=np.float64)
     sites = np.asarray(template_sites, dtype=np.float64)
     if sites.shape != (3, 3) or water.ndim != 2 or water.shape[1] != 3 or len(water) < 3:
         raise ValueError('Expected three sites and at least three water oxygens')
-    delta = sites[:, None, :] - water[None, :, :]
+    box = np.asarray(box_lengths, dtype=np.float64)
+    anchor = np.asarray(anchor_position, dtype=np.float64)
+    if box.shape != (3,) or np.any(box <= 0) or anchor.shape != (3,):
+        raise ValueError('Expected positive orthorhombic box lengths and one anchor')
+    displacement = water - anchor
+    displacement -= box * np.rint(displacement / box)
+    delta = sites[:, None, :] - displacement[None, :, :]
+    delta -= box * np.rint(delta / box)
     costs = np.sum(delta * delta, axis=-1)
     rows, cols = scipy.optimize.linear_sum_assignment(costs)
     if not np.array_equal(rows, np.arange(3)):
@@ -46,11 +53,19 @@ def environmental_sites(u, legacy_preprocessing, reference_frame):
     if not set(refs).issubset(set(oxygens)):
         raise AssertionError('Author selected non-water-oxygen reference; not supported by this probe')
     u.trajectory[int(reference_frame)]
-    sites = np.asarray(u.atoms.positions[refs], dtype=np.float64).copy()
+    environment = u.select_atoms('not resname MOL and not resname SOL and not element H').indices
+    if len(environment) == 0:
+        raise AssertionError('No stable environment anchor outside ligand/solvent')
+    anchor = int(environment[0])
+    box = u.dimensions.copy()
+    if not np.allclose(box[3:], 90., atol=1e-5):
+        raise AssertionError('Orthorhombic cell required for this prototype')
+    sites = np.asarray(u.atoms.positions[refs] - u.atoms.positions[anchor], dtype=np.float64)
+    sites -= box[:3] * np.rint(sites / box[:3])
     if not np.isfinite(sites).all():
         raise AssertionError('Nonfinite training reference sites')
     return dict(references=refs.tolist(), reference_frame=int(reference_frame),
-                candidate_oxygens=oxygens, template_sites=sites)
+                candidate_oxygens=oxygens, template_sites=sites, anchor_atom=anchor)
 
 
 class EnvironmentOnlyContextFlow(torch.nn.Module):
@@ -65,21 +80,24 @@ class EnvironmentOnlyContextFlow(torch.nn.Module):
             torch.as_tensor(environment, dtype=torch.long)))
         self.register_buffer('candidate_oxygens', torch.as_tensor(
             context['candidate_oxygens'], dtype=torch.long))
+        self.register_buffer('anchor_atom', torch.as_tensor(context['anchor_atom'], dtype=torch.long))
         self.register_buffer('template_sites', torch.as_tensor(
             context['template_sites'], dtype=torch.float64))
 
-    def assignments(self, x):
+    def assignments(self, x, box_lengths):
         # Selection is discrete by design; ligand gradients still flow through
         # the mapped coordinates after gathering environment reference atoms.
         env_xyz = x.detach().reshape(len(x), -1, 3)[:, self.candidate_oxygens].cpu().numpy()
         sites = self.template_sites.cpu().numpy()
         candidate = self.candidate_oxygens.cpu().numpy()
-        physical = np.stack([candidate[assignment_from_environment(water, sites)]
-                             for water in env_xyz])
+        anchor = x.detach().reshape(len(x), -1, 3)[:, self.anchor_atom].cpu().numpy()
+        boxes = np.asarray(box_lengths, dtype=np.float64)
+        physical = np.stack([candidate[assignment_from_environment(water, sites, a, box)]
+                             for water, a, box in zip(env_xyz, anchor, boxes)])
         return torch.as_tensor(physical, dtype=torch.long, device=x.device)
 
-    def _pass(self, x, inverse):
-        physical = self.assignments(x)
+    def _pass(self, x, inverse, box_lengths):
+        physical = self.assignments(x, box_lengths)
         dofs = atom_to_flattened_indices(physical)
         if dofs.ndim != 2 or dofs.shape != (len(x), len(self.reference_dofs)):
             raise AssertionError('Environment assignment has wrong shape')
@@ -92,11 +110,11 @@ class EnvironmentOnlyContextFlow(torch.nn.Module):
         y[:, self.environment_dofs] = x[:, self.environment_dofs]
         return (y, *result[1:])
 
-    def forward(self, x, ignored_sample_index=None):
-        return self._pass(x, False)
+    def forward(self, x, box_lengths):
+        return self._pass(x, False, box_lengths)
 
-    def inverse(self, y, ignored_sample_index=None):
-        return self._pass(y, True)
+    def inverse(self, y, box_lengths):
+        return self._pass(y, True, box_lengths)
 
 
 class EnvironmentOnlyMixedMAF(AuthorMixedMAF):
@@ -107,9 +125,9 @@ class EnvironmentOnlyMixedMAF(AuthorMixedMAF):
         return EnvironmentOnlyContextFlow(partial, self.preprocessing, environment, return_partial)
 
     def forward(self, batch):
-        y, logj = self._flow(batch['positions'])
+        y, logj = self._flow(batch['positions'], batch['cell'][:, :3])
         return dict(positions=y, log_det_J=logj)
 
     def inverse(self, batch):
-        y, logj = self._flow.inverse(batch['positions'])
+        y, logj = self._flow.inverse(batch['positions'], batch['cell'][:, :3])
         return dict(positions=y, log_det_J=logj)
