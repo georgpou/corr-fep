@@ -1,6 +1,10 @@
 name: Stage B2.5 - Bounded cloud benchmark
 on:
   workflow_dispatch:
+  push:
+    branches: ["stage-b/extended-cloud-benchmark"]
+    paths:
+      - ".github/b25-launch/one-time-request.txt"
 permissions:
   contents: read
 concurrency:
@@ -75,6 +79,11 @@ jobs:
         run: |
           git clone -q https://github.com/andrrizzi/paper-alchemical-tfep-qmmm-2026.git upstream-stage-b
           git -C upstream-stage-b checkout -q b8dfd897ebd914b4e592221710b397a2758353ce
+      - name: Real molecular preflight before expensive benchmark
+        run: |
+          set -o pipefail
+          python -u scripts/stage_b_extended_cloud_benchmark.py --preflight --scientific-minutes 25 \
+            2>&1 | tee results/stage-b/extended-cloud-benchmark/preflight.log
       - name: Execute single bounded integration benchmark
         run: |
           set -o pipefail
@@ -93,6 +102,7 @@ jobs:
             results/stage-b/extended-cloud-benchmark/*.pt
             results/stage-b/extended-cloud-benchmark/*.log
             results/stage-b/extended-cloud-benchmark/*.txt
+            results/stage-b/extended-cloud-benchmark/preflight/**
             results/stage-b/mechanical-embedding/*.log
             results/stage-b/mechanical-embedding/*.txt
             results/stage-b/mechanical-embedding/*.mdp
