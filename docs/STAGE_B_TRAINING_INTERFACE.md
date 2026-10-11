@@ -110,7 +110,7 @@ This is a passed B2.3 *interface* checkpoint, **not** a trained flow.
 **Acceptance:** B2.3 establishes finite real minibatch energy/force
 autograd, a consistent reference/mapped-target work convention, and
 numerically checked invertible mapping semantics. It does **not** establish
-a functioning or optimized published MixedMAF, statistical overlap,
+an optimized published MixedMAF, statistical overlap,
 meaningful ESS, unbiased MD sampling, or a free-energy result. Those are
 separate scientific gates in B2.4 and beyond.
 
@@ -134,6 +134,16 @@ to keep the interface test inexpensive. No optimizer, loss convergence,
 held-out validation, or QM/MM flow-training result is claimed here; those
 belong in B2.4.
 
-**Status:** Source repair proposed; require a *new* green dedicated molecular
-Actions run on the repaired source and its uploaded JSON audit before updating
-this status to scientifically accepted.
+**Accepted revalidation (2026-10-11):** [run #38128849456](https://github.com/georgpou/corr-fep/actions/runs/38128849456)
+passed with the repaired source at commit `9f093b8379b7bd6d44bad3206fad03fe07494dab`.
+[Artifact #11698756379](https://github.com/georgpou/corr-fep/actions/runs/38128849456/artifacts/11698756379)
+ZIP SHA256 `74a489a8149ce13de77bffc66373092d7a39ece9e5082d99f9dd7d167604fc92` was independently checked along with ZIP CRC, all scalar delta-energy and mapped-work arithmetic, and `validated=true` in its JSON.
+
+The first repaired run [#38128412180](https://github.com/georgpou/corr-fep/actions/runs/38128412180) revealed missing TPR element labels for the upstream Z-matrix. Reconstructing them with exactly the pinned upstream research `fix_universe_elements` logic addressed this. Run [#38128616297](https://github.com/georgpou/corr-fep/actions/runs/38128616297) then exposed an optional `bgflow` dependency. Final successful run pins `noegroup/bgflow` to `fbba56fac3eb88f6825d2bd4f745ee75ae9715e1` and `einops==0.8.0`.
+
+**Real upstream integration:** One-layer original `tfep.app.mixedmaf.MixedMAFMap` initialized from 12 archived production frames and ran a 2-frame forward/backward on frames 401 and 582. Position and box replay errors were 0; the mapped tensor had shape `(2,25260)`, environment displacement was 0, and `kT=2.477709860209666` kJ/mol. Real QM/MM energies were `[-332413.3115125408,-332471.1247856832]` kJ/mol; log-J was `[0,0]` at the initial identity flow. All nine trainable parameter-gradient tensors were finite, two nonzero, largest absolute gradient 270.5911. This proves a gradient path through the original flow to the real target. It does **not** prove a learning step, non-identity Jacobian correctness, loss decrease, or statistical overlap.
+
+Existing B2.3 molecular energies/gradients and mapped-work arithmetic remain numerically consistent. Repaired baseline took 10.417 s for 3 frames (versus 6.568 s in the prior run), with peak Python RSS 495 MiB; CPU speed should not be compared without accounting for runtime variation.
+
+**Accepted scope:** The missing unit contract, original atom-element metadata, optional mixed-coordinate dependency and workflow trigger are repaired. B2.4 must still execute real flow optimization and held-out temporal diagnostics. Lossy XTC and one deposited repeat remain unresolved sampling limitations.
+
