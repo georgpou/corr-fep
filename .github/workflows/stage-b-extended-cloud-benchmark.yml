@@ -84,6 +84,23 @@ jobs:
           set -o pipefail
           python -u scripts/stage_b_extended_cloud_benchmark.py --preflight --scientific-minutes 25 \
             2>&1 | tee results/stage-b/extended-cloud-benchmark/preflight.log
+      - name: Isolate full run from successful preflight
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p = Path("results/stage-b/extended-cloud-benchmark/preflight/benchmark.json")
+          preflight = json.loads(p.read_text())
+          assert preflight["stage"] == "complete", "Preflight was incomplete"
+          assert preflight["preflight_validated"] is True, "Preflight scientific checks failed"
+          assert preflight["validated"] is False, "Preflight must not claim a full benchmark"
+          print("B25_PRECHECK_ARTIFACT_VERIFIED")
+          PY
+          # B1 setup is intentionally non-idempotent; keep its previous numerical
+          # evidence in preflight/ but rebuild scratch topology, TPR, and rerun dirs.
+          test -d results/stage-b/mechanical-embedding/working
+          rm -rf -- results/stage-b/mechanical-embedding/working
       - name: Execute single bounded integration benchmark
         run: |
           set -o pipefail
