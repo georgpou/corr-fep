@@ -168,18 +168,43 @@ def real_mixedmaf_integration(potential, trajectory_path, ligand_indices,
     if fixed_error > 1e-10:
         raise AssertionError("Flow moved nominally fixed water atoms")
     target = potential(mapped, cells)
-    loss = (target / mapper._kT - logdet).mean()
+    reduced_energy = (target / mapper._kT).mean()
+    jacobian_contribution = -logdet.mean()
+    loss = reduced_energy + jacobian_contribution
     parameters = [p for p in mapper._flow.parameters() if p.requires_grad]
+
+    # A nonzero gradient of (target/kT - log|J|) alone does not prove that
+    # physical forces reach the neural network: it might be entirely from J.
+    # Verify the real QM/MM energy contribution separately at this same graph.
+    energy_grads = torch.autograd.grad(
+        reduced_energy, parameters, allow_unused=True, retain_graph=True)
+    jacobian_grads = torch.autograd.grad(
+        jacobian_contribution, parameters, allow_unused=True, retain_graph=True)
     gradients = torch.autograd.grad(loss, parameters, allow_unused=True)
     finite_gradients = [g for g in gradients if g is not None]
+    finite_energy_gradients = [g for g in energy_grads if g is not None]
+    finite_jacobian_gradients = [g for g in jacobian_grads if g is not None]
+    all_grads = [g for grads in (gradients, energy_grads, jacobian_grads)
+                 for g in grads if g is not None]
     if (len(parameters) == 0 or len(finite_gradients) == 0
+            or len(finite_energy_gradients) == 0
             or not torch.isfinite(target).all() or not torch.isfinite(logdet).all()
             or not torch.isfinite(loss)
-            or not all(torch.isfinite(g).all() for g in finite_gradients)):
+            or not all(torch.isfinite(g).all() for g in all_grads)):
         raise AssertionError("Real upstream MixedMAF forward/loss/backward failed")
     nonzero_gradients = sum(int(torch.count_nonzero(g) > 0) for g in finite_gradients)
-    if nonzero_gradients == 0:
-        raise AssertionError("MixedMAF did not receive any trainable gradient")
+    nonzero_energy_gradients = sum(
+        int(torch.count_nonzero(g) > 0) for g in finite_energy_gradients)
+    nonzero_jacobian_gradients = sum(
+        int(torch.count_nonzero(g) > 0) for g in finite_jacobian_gradients)
+    gradient_closure = max(
+        float((total - (torch.zeros_like(total) if energy is None else energy)
+               - (torch.zeros_like(total) if jac is None else jac)).abs().max())
+        for total, energy, jac in zip(gradients, energy_grads, jacobian_grads)
+        if total is not None)
+    if (nonzero_gradients == 0 or nonzero_energy_gradients == 0
+            or gradient_closure > 1e-7):
+        raise AssertionError("Real QM/MM physical gradient does not reach the flow")
     return dict(
         architecture="pinned tfep.app.mixedmaf.MixedMAFMap; 1 layer, ligand-only",
         claim="One upstream forward/backward, no optimizer, no convergence/DF claim",
@@ -197,6 +222,13 @@ def real_mixedmaf_integration(potential, trajectory_path, ligand_indices,
         trainable_parameter_tensors=len(parameters),
         gradient_tensors=len(finite_gradients),
         nonzero_gradient_tensors=nonzero_gradients,
+        nonzero_qmmm_energy_gradient_tensors=nonzero_energy_gradients,
+        nonzero_jacobian_gradient_tensors=nonzero_jacobian_gradients,
+        qmmm_energy_gradient_max_abs=max(float(g.detach().abs().max())
+                                         for g in finite_energy_gradients),
+        jacobian_gradient_max_abs=max(float(g.detach().abs().max())
+                                      for g in finite_jacobian_gradients),
+        gradient_decomposition_max_abs_error=gradient_closure,
         largest_abs_parameter_gradient=max(float(g.detach().abs().max())
                                            for g in finite_gradients),
         seconds=time.perf_counter() - t0,
