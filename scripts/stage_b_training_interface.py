@@ -114,6 +114,18 @@ def real_mixedmaf_integration(potential, trajectory_path, ligand_indices,
             u = mda.Universe(str(ROOT / "archived-eq.tpr"),
                              str(trajectory_path))
             register_trajectory_transformations(u, ligand_indices)
+            # Identical atom-type -> element logic to the pinned upstream
+            # run_tfep.py:fix_universe_elements() for original TPR topology.
+            special_types = {"amber99_338": "Na", "amber99_333": "Cl"}
+            elements = []
+            for atom in u.atoms:
+                atom_type = str(atom.type)
+                if "DUM" in atom_type:
+                    raise ValueError("Dummy atom in archived topology")
+                elements.append(special_types.get(atom_type, atom_type[0].upper()))
+            if hasattr(u.atoms, "elements"):
+                u.del_TopologyAttr("element")
+            u.add_TopologyAttr("element", elements)
             return u
 
         def create_dataset(self):
