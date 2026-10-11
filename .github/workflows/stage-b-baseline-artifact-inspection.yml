@@ -1,0 +1,36 @@
+name: Inspect completed B2.5 baseline
+on:
+  push:
+    branches: ["stage-b/extended-cloud-benchmark"]
+    paths: [".github/b25-baseline-inspection/run-request.txt"]
+  workflow_dispatch:
+permissions:
+  actions: read
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: python -m pip install numpy==1.26.4
+      - name: Download saved original baseline artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh run download 38173132836 --repo georgpou/corr-fep --name stage-b25-author-full-baseline --dir saved-baseline
+          find saved-baseline -maxdepth 2 -type f -printf '%p %s bytes\n'
+      - name: Inspect checkpoint files and validation weight concentration
+        run: |
+          set -euo pipefail
+          python -u scripts/stage_b_baseline_artifact_inspection.py saved-baseline/full-baseline.json results/inspection
+      - name: Upload inspection summary
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: b25-baseline-inspection
+          path: results/inspection/
+          if-no-files-found: warn
