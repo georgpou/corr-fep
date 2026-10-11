@@ -1,0 +1,2 @@
+One diagnostic proposal: fixed solvent reference atoms; zero energies and zero physical training.
+Keep production benchmark unchanged. Verify actual Cartesian determinant before requesting methodological adoption.

@@ -1,6 +1,6 @@
 # B2.5 Cartesian coordinate recovery
 
-## Evidence and hypothesis
+## Initial evidence
 
 The original epoch-1 diagnostic is Actions run 38148045379 at commit
 680a15dff8023e2b174ab9b31d0d1f1242ef98c0. Its live step-25, -50, -75,
@@ -66,3 +66,69 @@ validation. No held-out test frames enter this diagnostic.
 
 PR #14 remains draft and unmerged. Complete recovery and benchmark success
 have not been established.
+
+## Completed frozen-checkpoint evidence
+
+The original diagnostic finished all 325 updates and saved both checkpoints.
+The final Cartesian errors reproduce the first failed benchmark to about
+1e-13 absolute precision; all 13 mixed-space probes remain at machine
+precision. The frozen audit completed as Actions run
+[38149445011](https://github.com/georgpou/corr-fep/actions/runs/38149445011),
+artifact 11706690747. Its JSON confirms zero QM evaluations and exact
+checkpoint replay (all four compared differences are zero).
+
+Across three training and three validation frames per checkpoint:
+
+| Checkpoint | Reference shifts | Max inverse error (Angstrom) | Max logdet closure | Geometry gates |
+|---|---|---:|---:|---:|
+| Step 25 | Original | 8.297181e-5 | 1.474078e-3 | 0/6 pass |
+| Step 25 | Disabled, diagnostic only | 3.197442e-14 | 8.526513e-14 | 6/6 pass |
+| Step 325 | Original | 6.325858e-3 | 8.295727e-2 | 0/6 pass |
+| Step 325 | Disabled, diagnostic only | 6.394885e-14 | 1.136868e-13 | 6/6 pass |
+
+The coordinate bridge isolates the recoding error to the reference triangle
+shape coordinates (indices 129, 130, 131); the 129 other internal
+coordinates recode at machine precision. Six shifted reference residuals
+are reset to approximately zero when the new atom-based frame is built.
+Disabling those shifts removes the positional closure failure. This is
+causal evidence, not merely a correlation with optimizer steps.
+
+However, inverse closure alone misses a second defect. At train frame 726,
+the independent 138-by-138 full Cartesian determinant differs from the
+reported value:
+
+| Checkpoint | Reference shifts | Numerical logabsdet | Reported logabsdet | Absolute discrepancy |
+|---|---|---:|---:|---:|
+| Step 25 | Original | 0.03194662516534237 | 0.033921474432190735 | 0.001974849266848364 |
+| Step 25 | Disabled | 0.03643947769728424 | 0.03392147443216231 | 0.002518003265121929 |
+| Step 325 | Original | 0.8855554488581434 | 0.9067553656517191 | 0.02119991679357569 |
+| Step 325 | Disabled | 0.9246609243899414 | 0.9067553656516907 | 0.017905558738250726 |
+
+All numerical determinant signs are positive. Thus merely disabling the
+six shifts is **not a scientifically valid production fix**. The true
+Cartesian derivative includes the dependence of the molecular frame on
+mapped coordinates; the reported coordinate-conversion determinant does
+not capture the complete transformation in this ligand-based setup.
+
+## Concrete next diagnostic and proposed representation
+
+The pinned paper `run_tfep.py:run_preprocess` chooses its origin and axes
+from **conditioning atoms**, which stay fixed under the map. Our pilot
+instead obtains its frame from mapped ligand atoms. The proposed minimal
+alternative retains a one-layer MixedMAF and the ligand-only mapped set,
+while adding three solvent atoms as fixed conditioning/reference atoms.
+The Hamiltonian, target labels, temperature, partitions, and acceptance
+thresholds remain the same. This changes the model representation and
+requires a methodological decision before adoption and physical training.
+
+`scripts/stage_b_fixed_reference_probe.py` is an explicitly diagnostic
+proposal, not a benchmark change. It chooses one O/H/H water identity
+using only the original 32 training calibration frames, rejects wrapped
+or near-collinear reference triples there, and locks that identity before
+validation. It checks original geometry gates plus independent full
+Cartesian determinants and a central-difference directional derivative
+on training and validation. Identity and deterministic parameter
+perturbations of 0.001 and 0.03 are examined. **Perturbation is not trained
+optimization**; no QM/MM energies, mock energies, or training are used.
+The experiment is capped at 40 workflow minutes and 25 execution minutes.
+No full benchmark retry is authorized by a successful diagnostic.
