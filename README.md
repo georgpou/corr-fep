@@ -19,7 +19,7 @@ We will compare estimators at equal QM/MM evaluation budgets and on *held-out tr
 
 ## Status
 
-**Stage B1 validated; Stage B2 in progress.** The repository has validated synthetic TFEP normalizing-flow benchmarks and the genuine GFN1-xTB / GROMACS mechanical-embedding QM/MM energy and gradient on one archived p38a_2g water configuration. Stage B2 now investigates multiple deposited water-trajectory frames. This does **not** yet reproduce the paper's complete 25-repeat training experiment, perform molecular QM/MM flow training, or establish a validated ARM64/H200 deployment. See [Stage B1](docs/STAGE_B_MECHANICAL_EMBEDDING.md) and [Stage B2](docs/STAGE_B_MULTIFRAME.md).
+**Stage B2.5: recovering molecular-map integrity.** Real GROMACS/GFN1-xTB mechanical-embedding energies and gradients are integrated, and MixedMAF has undergone real QM/MM optimization. The extended 650/250/300-frame benchmark failed Cartesian inverse closure after its first epoch. A fresh diagnostic reproduced the failure; frozen trained weights localized it to the ligand-based reference-frame conversion and exposed a discrepancy between reported and independently differentiated Cartesian Jacobians. The extended benchmark remains unvalidated, and earlier tiny training pilots are integration evidence rather than validated TFEP improvements. See [the recovery record](docs/B25_COORDINATE_RECOVERY.md), [the benchmark protocol](docs/STAGE_B_EXTENDED_CLOUD_BENCHMARK.md), and [the continuation handoff](docs/HANDOFF_B25_INVERSE_INTEGRITY_RECOVERY.md). The complete 25-repeat paper experiment and ARM64/H200 deployment remain outstanding.
 
 ## Get started (no dataset required)
 
