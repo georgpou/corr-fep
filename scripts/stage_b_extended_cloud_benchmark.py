@@ -272,7 +272,11 @@ def train_epoch(mapper, potential, samples, optimizer, deadline, epoch):
                 gradient_audit=first_grad, seconds=time.perf_counter()-started)
 
 
-def benchmark(max_minutes):
+def benchmark(max_minutes, preflight=False):
+    global OUT
+    if preflight:
+        OUT = OUT / "preflight"
+
     started = time.perf_counter()
     deadline = started + 60 * max_minutes
     random.seed(SEED)
@@ -282,18 +286,22 @@ def benchmark(max_minutes):
     torch.set_num_threads(1)
     OUT.mkdir(parents=True, exist_ok=True)
     ROOT.mkdir(parents=True, exist_ok=True)
-    arrays = {"train": TRAIN, "validation": VALIDATION, "test": TEST}
+    arrays = ({"train": np.array([401, 582, 764, 1050]),
+               "validation": np.array([1151, 1400]),
+               "test": np.array([1501, 1800])}
+              if preflight else
+              {"train": TRAIN, "validation": VALIDATION, "test": TEST})
     all_indices = np.concatenate(list(arrays.values()))
     if len(set(all_indices)) != len(all_indices) or len(set(CALIBRATION)-set(TRAIN)):
         raise AssertionError("Overlapping partitions or calibration leakage")
     result = dict(
         checkpoint="B2.5 bounded real-QM/MM MixedMAF",
-        validated=False, stage="initializing",
+        validated=False, preflight=preflight, stage="initializing",
         seed=SEED, archive=ARCHIVE, max_scientific_minutes=max_minutes,
         index_partitions={key: values.tolist() for key, values in arrays.items()},
         calibration_frame_indices=CALIBRATION.tolist(),
         training_probe_frame_indices=TRAIN_PROBE.tolist(),
-        optimizer={"name": "AdamW", "lr": LR, "weight_decay": 0, "epochs": EPOCHS,
+        optimizer={"name": "AdamW", "lr": LR, "weight_decay": 0, "epochs": (1 if preflight else EPOCHS),
                    "batch_size": BATCH, "layers": 1},
         limitations=("One archived repeat and quantized XTC; no unbiased free-energy "
                      "or ESS interpretation; chronological gaps do not guarantee "
@@ -329,7 +337,7 @@ def benchmark(max_minutes):
         if len(universe.trajectory) <= int(TEST[-1]):
             raise AssertionError("Insufficient deposited trajectory frames")
         for label, indices in arrays.items():
-            if np.any(np.diff(indices) != 1):
+            if not preflight and np.any(np.diff(indices) != 1):
                 raise AssertionError(f"Noncontiguous {label} index block")
         if np.min(VALIDATION) - np.max(TRAIN) - 1 != 100:
             raise AssertionError("Training/validation gap not 100 frames")
@@ -391,11 +399,12 @@ def benchmark(max_minutes):
             train=float(np.median(np.diff([s["time_ps"] for s in samples["train"]]))),
             validation=float(np.median(np.diff([s["time_ps"] for s in samples["validation"]]))),
             test=float(np.median(np.diff([s["time_ps"] for s in samples["test"]]))))
-        if any(abs(t-5.0) > 0.1 for t in result["frame_spacing_ps"].values()):
+        if not preflight and any(abs(t-5.0) > 0.1 for t in result["frame_spacing_ps"].values()):
             raise AssertionError("Expected 5-ps archive frame spacing")
         record(destination, result)
 
         ref = {}
+        reference_started = time.perf_counter()
         for block in ("train", "validation", "test"):
             for n, s in enumerate(samples[block], 1):
                 if time.perf_counter() >= deadline:
@@ -408,7 +417,7 @@ def benchmark(max_minutes):
                 if n % 100 == 0:
                     print("B25_REFERENCE_PROGRESS", block, n, flush=True)
         result["reference_completed_frames"] = len(ref)
-        result["reference_seconds"] = time.perf_counter()-started
+        result["reference_seconds"] = time.perf_counter()-reference_started
         result["stage"] = "training_and_validation"
         record(destination, result)
 
@@ -426,7 +435,8 @@ def benchmark(max_minutes):
             probe = samples["train"][len(samples["train"])//2]["positions"]
             result["initial_inverse_geometry"] = check_geometry(
                 mapper, probe, fixed, bonds, ligand_idx)
-            probe_samples = [samples["train"][int(i - TRAIN[0])] for i in TRAIN_PROBE]
+            probe_samples = (samples["train"] if preflight else
+                             [samples["train"][int(i - TRAIN[0])] for i in TRAIN_PROBE])
             initial_train, _ = evaluate(
                 mapper, potential, probe_samples, ref, fixed,
                 "initial_train_probe", 0, writer, csv_file, deadline)
@@ -439,7 +449,7 @@ def benchmark(max_minutes):
             selected_epoch = 0
             capture_checkpoint(mapper, optimizer, setup_keys, 0, OUT / "selected.pt")
             record(destination, result)
-            for epoch in range(1, EPOCHS+1):
+            for epoch in range(1, (1 if preflight else EPOCHS)+1):
                 epoch_info = train_epoch(
                     mapper, potential, samples["train"], optimizer, deadline, epoch)
                 epoch_info["inverse_geometry"] = check_geometry(
@@ -511,9 +521,10 @@ def benchmark(max_minutes):
             result["runtime_seconds"] = time.perf_counter()-started
             result["python_peak_rss_mib"] = (
                 resource.getrusage(resource.RUSAGE_SELF).ru_maxrss/1024)
-            result["validated"] = True
+            result["validated"] = not preflight
+            result["preflight_validated"] = bool(preflight)
             record(destination, result)
-            print("B25_VALIDATED", json.dumps({
+            print("B25_PREFLIGHT_PASSED" if preflight else "B25_VALIDATED", json.dumps({
                 "selected_epoch": selected_epoch,
                 "test_before": result["initial_test"],
                 "test_after": result["final_test"],
@@ -534,7 +545,8 @@ def benchmark(max_minutes):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--scientific-minutes", type=float, default=165)
+    parser.add_argument("--preflight", action="store_true")
     args = parser.parse_args()
     if not 1 <= args.scientific_minutes <= 165:
         parser.error("scientific budget must lie in [1, 165] minutes")
-    benchmark(args.scientific_minutes)
+    benchmark(args.scientific_minutes, preflight=args.preflight)
