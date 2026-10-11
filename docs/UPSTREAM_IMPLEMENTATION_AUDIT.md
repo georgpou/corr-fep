@@ -141,8 +141,8 @@ suite is warranted at this stage.
 
 ### U3 — Permutation restoration can overwrite mapped water output
 
-**Priority: relevant before mapping solvent; static finding, runtime
-reproduction pending. Not exercised by ligand-only mapping.**
+**Priority: relevant before mapping solvent; actual released wrapper reproduced
+in Actions 38153394950. Not exercised by ligand-only mapping.**
 
 `PermutationFlow.forward` scatters transformed reference slots into physical
 matched indices (line 915–916), then restores every reference slot from the
@@ -157,7 +157,7 @@ The wrapper also exposes no inverse method. Our explicit inverse gate needs
 a reviewed adapter that reuses the same cached atom assignment and restores
 original physical atom order; do not claim that copying it supplies an inverse.
 
-## Revised next experiment — proposal only
+## Source-informed experiment — subsequently authorized
 
 Build a thin, attributed adapter around the original preprocessing helpers
 and pinned `MixedMAFMap`, rather than a second coordinate implementation.
@@ -181,13 +181,14 @@ Before any physical updates:
   coordinate engine, independent full Cartesian determinants, nontrivial
   parameters, train/validation geometry and checkpoint reconstruction. A
   successful execution label alone is not sufficient.
-- Only after the representation is understood and explicitly approved,
-  consider the bounded three-update real-QM/MM pilot. Keep physical models,
+- The user has explicitly approved the source-informed representation and
+  bounded three-update real-QM/MM pilot. Run it after the coordinate gate passes. Keep physical models,
   objective and existing acceptance thresholds. Keep the held-out test unused.
 
 The earlier proposed exact O/H/H indices 4747/4748/4749 are not the new
-selection. No new indices or matched roles have been chosen yet. Do not
-silently dispatch either pilot, change the benchmark or mark PR #14 ready.
+selection. The author-conditioned adapter now selects matched roles on training
+only. Both bounded pilots are authorized; PR #14 remains draft until scientific
+results have been inspected. Merging still requires separate approval.
 The original six-layer production settings should subsequently form a
 separate documented baseline before interpreting improvements from our own
 hypothesis; do not change optimizer, architecture and coordinate convention

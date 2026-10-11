@@ -28,6 +28,28 @@ def save_weights(mapper,optimizer,scheduler,path,step,metadata):
         step=step,seed=SEED,metadata=metadata),path)
 
 
+def batch_geometry(mapper,x,y,logj,indices,fixed,bonds,ligand_idx):
+    """Same per-frame gates in one batched inverse; avoids 32 serial inverses."""
+    with torch.no_grad():
+        reverse=mapper.inverse(dict(positions=y.detach(),trajectory_sample_index=torch.as_tensor(indices)))
+        check_finite(reverse['positions'],'batch inverse positions')
+        check_finite(reverse['log_det_J'],'batch inverse logdet')
+        p=y.detach().reshape(len(indices),-1,3); delta=(y.detach()-x).reshape(len(indices),-1,3)
+        lengths=torch.linalg.vector_norm(p[:,bonds[:,0]]-p[:,bonds[:,1]],dim=-1)
+        values=dict(inverse_max_abs_error_angstrom=(reverse['positions']-x).abs().amax(dim=1),
+            inverse_logdet_closure=(reverse['log_det_J']+logj.detach()).abs(),
+            fixed_environment_error_angstrom=delta[:,fixed].abs().flatten(1).amax(dim=1),
+            min_bond_angstrom=lengths.amin(dim=1),max_bond_angstrom=lengths.amax(dim=1),
+            max_ligand_displacement_angstrom=delta[:,ligand_idx].abs().flatten(1).amax(dim=1))
+        rows=[{key:float(value[i]) for key,value in values.items()} for i in range(len(indices))]
+    for frame,row in zip(indices,rows):
+        if (row['inverse_max_abs_error_angstrom']>1e-5 or row['inverse_logdet_closure']>1e-5
+            or row['fixed_environment_error_angstrom']>1e-10 or row['min_bond_angstrom']<0.6
+            or row['max_bond_angstrom']>2.5 or row['max_ligand_displacement_angstrom']>2.0):
+            raise AssertionError('Training batch geometry failed at frame '+str(frame)+': '+str(row))
+    return rows
+
+
 def small_validation(mapper,potential,u,ligand_idx,fixed,bonds,report,path):
     """Paired frozen-map versus identity comparison; no fitting or test use."""
     indices=np.unique(np.linspace(VALIDATION[0],VALIDATION[-1],16,dtype=int))
@@ -98,7 +120,8 @@ def main():
             mapped=mapper(dict(positions=x,trajectory_sample_index=torch.as_tensor(indices)))
             y,logj=mapped['positions'],mapped['log_det_J']
             # Gate every configuration before its first target energy call.
-            geometry=[check_geometry(BoundFrame(mapper,int(f)),s['positions'],fixed,bonds,ligand_idx) for f,s in zip(indices,batch)]
+            check_finite(y,'mapped training positions')
+            geometry=batch_geometry(mapper,x,y,logj,indices,fixed,bonds,ligand_idx)
             target=potential(y,cells)
             physical=(target/mapper._kT).mean(); jacobian=-logj.mean(); loss=physical+jacobian
             for value,label in ((target,'QM/MM target'),(logj,'Cartesian logdet'),(loss,'physical training objective')):
