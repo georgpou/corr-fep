@@ -1,0 +1,34 @@
+name: Analyze completed benchmark
+on:
+  workflow_dispatch:
+  push:
+    branches: ["experiment/variance-work-benchmark"]
+    paths:
+      - ".github/variance-benchmark/analyze-request.txt"
+permissions:
+  contents: read
+  actions: read
+jobs:
+  compare:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: python -m pip install numpy==1.26.4
+      - name: Download completed artifacts
+        run: |
+          mkdir -p comparison/control comparison/variance
+          gh run download 38277490360 -n variance-benchmark-control -D comparison/control
+          gh run download 38277490360 -n variance-benchmark-variance -D comparison/variance
+      - name: Compare real physical validation
+        run: |
+          python scripts/stage_b_variance_compare.py comparison/control/report.json comparison/variance/report.json > comparison/summary.json
+          cat comparison/summary.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: variance-comparison-summary
+          path: comparison/summary.json
