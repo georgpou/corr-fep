@@ -40,8 +40,26 @@ The original code has been audited for water-slot ordering and other restricted 
 ## Clean-branch acceptance
 
 1. Compare clean branch files with their preserved original functions and verify no rejected experiments are included.
-2. Rerun full 650-training/250-validation author baseline with unchanged numerical settings.
-3. Compare resulting metrics and provenance against the original successful run.
+2. **Passed:** Rerun full 650-training/250-validation author baseline with unchanged numerical settings.
+3. **Passed:** Compare results and provenance against the original successful run.
 4. Retain PR #14 for traceability; do not merge any PR without explicit owner approval.
 
 This PR does **not** claim exact reproduction of the paper's full multi-repeat multimap free-energy results. Neither the novel Corr-FEP hypothesis nor an ESS penalty is implemented here.
+
+## Independent rerun on the clean branch — passed
+
+[Clean GitHub Actions run #38180943734](https://github.com/georgpou/corr-fep/actions/runs/38180943734) completed successfully on the new branch in ~52 minutes. It completed all **21** updates on the **same 650 training frames in exactly the same shuffled order**, selected the same matched-water reference slots `[8299, 487, 6148]`, and evaluated all **250** validation frames.
+
+| Diagnostic | Original run #38173132836 | Clean rerun #38180943734 |
+|---|---:|---:|
+| Identity reduced-work SD | 6.835677165012 | 6.835677165015 |
+| Mapped reduced-work SD | 5.705048691078 | 5.705048499720 |
+| Identity ESS / 250 | 1.116307030578 | 1.116307030570 |
+| Mapped ESS / 250 | 1.951064263632 | 1.951064281095 |
+| Mapped free-energy correction (kJ/mol; not converged) | -215367.048445 | -215367.048444 |
+
+The largest difference in the 21 corresponding training-batch objectives was `6.85e-7` reduced units; the largest difference in gradient L2 norms was `4.21e-5`. The mapped free-energy estimates differ by only `1.91e-6` kJ/mol. Small platform-level numerical variation is expected. **These are equivalent physical results.**
+
+The original and transplanted `stage_b_author_map.py` and `stage_b_author_full_baseline.py` were compared line-for-line: **only import lines changed** (2 and 3, respectively). Reused numerical helper function bodies were copied to small self-contained modules. The clean PR contains no abandoned environment-only, frozen-reference or one-layer experimental source files/workflows. The earlier five-checkpoint numerical replay remains recorded at [run #38179406749](https://github.com/georgpou/corr-fep/actions/runs/38179406749).
+
+**Acceptance:** The clean implementation's reproducibility checkpoint is satisfied, and PR #15 is ready for code review as a partial author-pipeline reproduction. No novel Corr-FEP improvement or ESS-aware training is included; neither statistical convergence nor the paper's complete 25-repeat multimap results are claimed.
