@@ -1,0 +1,186 @@
+{
+  "status": "complete",
+  "frames": [
+    1151,
+    1167,
+    1184,
+    1200,
+    1217,
+    1234,
+    1250,
+    1267,
+    1283,
+    1300,
+    1317,
+    1333,
+    1350,
+    1366,
+    1383,
+    1400
+  ],
+  "qmmm_calls": 0,
+  "training_updates": 0,
+  "source_run": 38180943734,
+  "source_reference_frame": 409,
+  "source_trajectory": {
+    "member": "lig_p38a_2g/eq/water/repeat-0/traj_comp.xtc",
+    "sha256": "1d9451c4f969d23791676e971fdb358394917ea7c51dae43e7390fe604e99362",
+    "size_bytes": 73093240,
+    "compressed_bytes": 73072726,
+    "crc32": "54073648",
+    "retrieval": "ZIP member via HTTP byte ranges, no whole-archive download"
+  },
+  "inverse_max_error_A": 8.526512829121202e-14,
+  "env_error_A": 0.0,
+  "frame_rows": [
+    {
+      "frame": 1151,
+      "original_vs_cached_oxygen_changes": 0,
+      "original_vs_mapped_oxygen_changes": 1,
+      "original_vs_mapped_hydrogen_changes": 2,
+      "baseline_reference_changes": 0,
+      "max_ligand_displacement_A": 0.1429247812290022,
+      "rms_ligand_displacement_A": 0.0689249701737601
+    },
+    {
+      "frame": 1167,
+      "original_vs_cached_oxygen_changes": 0,
+      "original_vs_mapped_oxygen_changes": 2,
+      "original_vs_mapped_hydrogen_changes": 6,
+      "baseline_reference_changes": 1,
+      "max_ligand_displacement_A": 0.1983193621574207,
+      "rms_ligand_displacement_A": 0.09817814648195512
+    },
+    {
+      "frame": 1184,
+      "original_vs_cached_oxygen_changes": 0,
+      "original_vs_mapped_oxygen_changes": 2,
+      "original_vs_mapped_hydrogen_changes": 4,
+      "baseline_reference_changes": 0,
+      "max_ligand_displacement_A": 0.19363886937204178,
+      "rms_ligand_displacement_A": 0.08951270902099515
+    },
+    {
+      "frame": 1200,
+      "original_vs_cached_oxygen_changes": 0,
+      "original_vs_mapped_oxygen_changes": 5,
+      "original_vs_mapped_hydrogen_changes": 10,
+      "baseline_reference_changes": 0,
+      "max_ligand_displacement_A": 0.2190030201238402,
+      "rms_ligand_displacement_A": 0.08217412218036424
+    },
+    {
+      "frame": 1217,
+      "original_vs_cached_oxygen_changes": 0,
+      "original_vs_mapped_oxygen_changes": 1,
+      "original_vs_mapped_hydrogen_changes": 2,
+      "baseline_reference_changes": 0,
+      "max_ligand_displacement_A": 0.16560250787778738,
+      "rms_ligand_displacement_A": 0.08257807784343843
+    },
+    {
+      "frame": 1234,
+      "original_vs_cached_oxygen_changes": 0,
+      "original_vs_mapped_oxygen_changes": 1,
+      "original_vs_mapped_hydrogen_changes": 2,
+      "baseline_reference_changes": 0,
+      "max_ligand_displacement_A": 0.1477738753084005,
+      "rms_ligand_displacement_A": 0.08237170627745945
+    },
+    {
+      "frame": 1250,
+      "original_vs_cached_oxygen_changes": 0,
+      "original_vs_mapped_oxygen_changes": 2,
+      "original_vs_mapped_hydrogen_changes": 4,
+      "baseline_reference_changes": 0,
+      "max_ligand_displacement_A": 0.16461910932195323,
+      "rms_ligand_displacement_A": 0.07974274298185575
+    },
+    {
+      "frame": 1267,
+      "original_vs_cached_oxygen_changes": 0,
+      "original_vs_mapped_oxygen_changes": 0,
+      "original_vs_mapped_hydrogen_changes": 0,
+      "baseline_reference_changes": 0,
+      "max_ligand_displacement_A": 0.19147020606662435,
+      "rms_ligand_displacement_A": 0.09001782118780062
+    },
+    {
+      "frame": 1283,
+      "original_vs_cached_oxygen_changes": 0,
+      "original_vs_mapped_oxygen_changes": 4,
+      "original_vs_mapped_hydrogen_changes": 8,
+      "baseline_reference_changes": 0,
+      "max_ligand_displacement_A": 0.16094096564640983,
+      "rms_ligand_displacement_A": 0.0914043965704619
+    },
+    {
+      "frame": 1300,
+      "original_vs_cached_oxygen_changes": 0,
+      "original_vs_mapped_oxygen_changes": 4,
+      "original_vs_mapped_hydrogen_changes": 10,
+      "baseline_reference_changes": 0,
+      "max_ligand_displacement_A": 0.1763617081268596,
+      "rms_ligand_displacement_A": 0.08824524569248157
+    },
+    {
+      "frame": 1317,
+      "original_vs_cached_oxygen_changes": 0,
+      "original_vs_mapped_oxygen_changes": 3,
+      "original_vs_mapped_hydrogen_changes": 6,
+      "baseline_reference_changes": 0,
+      "max_ligand_displacement_A": 0.15909897605772494,
+      "rms_ligand_displacement_A": 0.07426999373572125
+    },
+    {
+      "frame": 1333,
+      "original_vs_cached_oxygen_changes": 0,
+      "original_vs_mapped_oxygen_changes": 2,
+      "original_vs_mapped_hydrogen_changes": 4,
+      "baseline_reference_changes": 0,
+      "max_ligand_displacement_A": 0.17026143002612695,
+      "rms_ligand_displacement_A": 0.07948479023406299
+    },
+    {
+      "frame": 1350,
+      "original_vs_cached_oxygen_changes": 0,
+      "original_vs_mapped_oxygen_changes": 1,
+      "original_vs_mapped_hydrogen_changes": 6,
+      "baseline_reference_changes": 0,
+      "max_ligand_displacement_A": 0.23190633750655598,
+      "rms_ligand_displacement_A": 0.08899438576182277
+    },
+    {
+      "frame": 1366,
+      "original_vs_cached_oxygen_changes": 0,
+      "original_vs_mapped_oxygen_changes": 0,
+      "original_vs_mapped_hydrogen_changes": 0,
+      "baseline_reference_changes": 0,
+      "max_ligand_displacement_A": 0.20568567257109502,
+      "rms_ligand_displacement_A": 0.07996874096025396
+    },
+    {
+      "frame": 1383,
+      "original_vs_cached_oxygen_changes": 0,
+      "original_vs_mapped_oxygen_changes": 0,
+      "original_vs_mapped_hydrogen_changes": 6,
+      "baseline_reference_changes": 0,
+      "max_ligand_displacement_A": 0.20882554780123033,
+      "rms_ligand_displacement_A": 0.10277510377627469
+    },
+    {
+      "frame": 1400,
+      "original_vs_cached_oxygen_changes": 0,
+      "original_vs_mapped_oxygen_changes": 2,
+      "original_vs_mapped_hydrogen_changes": 4,
+      "baseline_reference_changes": 0,
+      "max_ligand_displacement_A": 0.1614000733388391,
+      "rms_ligand_displacement_A": 0.07567086270258197
+    }
+  ],
+  "changed_oxygen_frames": 13,
+  "changed_reference_frames": 1,
+  "source_preprocess_agree_frames": 16,
+  "max_ligand_displacement_A": 0.23190633750655598,
+  "limitation": "Assignment changes are not evidence of nonbijectivity or free-energy bias."
+}
