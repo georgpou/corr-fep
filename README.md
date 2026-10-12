@@ -19,7 +19,9 @@ We will compare estimators at equal QM/MM evaluation budgets and on *held-out tr
 
 ## Status
 
-**Stage B1 validated; Stage B2 in progress.** The repository has validated synthetic TFEP normalizing-flow benchmarks and the genuine GFN1-xTB / GROMACS mechanical-embedding QM/MM energy and gradient on one archived p38a_2g water configuration. Stage B2 now investigates multiple deposited water-trajectory frames. This does **not** yet reproduce the paper's complete 25-repeat training experiment, perform molecular QM/MM flow training, or establish a validated ARM64/H200 deployment. See [Stage B1](docs/STAGE_B_MECHANICAL_EMBEDDING.md) and [Stage B2](docs/STAGE_B_MULTIFRAME.md).
+The clean authors' **six-layer MixedMAF / GFN1-xTB/MM training baseline** is available in `scripts/stage_b_author_full_baseline.py`. It retains the authors' energy/Jacobian loss without ESS optimization. A historical run on the one deposited water-phase repeat completed 650 training frames / 21 updates and 250 frozen-map validation frames, with ESS 1.116 (identity) and 1.951 (mapped). This is a **partial reproduction of the training pipeline**, not the paper's full 25-repeat multimap free-energy result, and the free-energy estimate is not statistically converged.
+
+The numerical checkpoint replay of the original run succeeded. The clean-branch reproducibility run is tracked in [GitHub Actions](https://github.com/georgpou/corr-fep/actions/runs/38180943734). Changes relative to the authors' source and original successful implementation are detailed in [the reproduction report](docs/AUTHOR_BASELINE_REPRODUCTION.md). Experimental unsuccessful mapping variants are excluded from this PR.
 
 ## Get started (no dataset required)
 

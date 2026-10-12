@@ -1,0 +1,1 @@
+Reproduce original 650/250 six-layer author baseline on clean branch; source training code from original verified commit efa2e84. No abandoned probes.
