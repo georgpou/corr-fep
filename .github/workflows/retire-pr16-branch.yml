@@ -1,0 +1,31 @@
+name: Finalize PR16 branch retirement
+on:
+  push:
+    branches: ["archive/pr16-water-matching-audit-2026-10-12"]
+    paths: [".github/workflows/retire-pr16-branch.yml"]
+permissions:
+  contents: write
+  pull-requests: read
+jobs:
+  retire:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Verify evidence archived and PR closed, then remove working ref
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          repo="georgpou/corr-fep"
+          state="$(gh api "repos/$repo/pulls/16" --jq .state)"
+          test "$state" = "closed"
+          merged="$(gh api "repos/$repo/pulls/16" --jq .merged)"
+          test "$merged" = "false"
+          sha="$(gh api "repos/$repo/git/ref/heads/stage-b/water-matching-validity-audit" --jq .object.sha)"
+          test "$sha" = "d5fcbff9177bf59eef276f3c0558eeb31d3118c4"
+          archived="$(gh api "repos/$repo/git/ref/heads/archive/pr16-water-matching-audit-2026-10-12" --jq .object.sha)"
+          test -n "$archived"
+          for f in learned-map.json perturbation.json SHA256SUMS; do
+            gh api "repos/$repo/contents/docs/evidence/pr16/$f?ref=archive/pr16-water-matching-audit-2026-10-12" --jq .sha >/dev/null
+          done
+          gh api --method DELETE "repos/$repo/git/refs/heads/stage-b/water-matching-validity-audit"
+          echo "PR16 working branch deleted; archive branch and Issue 17 retained."
