@@ -1,0 +1,1 @@
+Analyze completed physical benchmark reports without fetching large logs.
