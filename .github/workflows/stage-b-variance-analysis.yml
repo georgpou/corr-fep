@@ -19,6 +19,8 @@ jobs:
           python-version: "3.11"
       - run: python -m pip install numpy==1.26.4
       - name: Download completed artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           mkdir -p comparison/control comparison/variance
           gh run download 38277490360 -n variance-benchmark-control -D comparison/control
