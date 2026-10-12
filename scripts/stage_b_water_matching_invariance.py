@@ -106,7 +106,7 @@ def main():
         matcher = adapted_match(driver, OUT)
         ref_water, matched_rows, rmsds, _ = matcher(
             "", ref, 0, SCAFFOLD, "resname SOL", CUTOFF,
-            np.asarray([], dtype=int), matched_universe=matched)
+            np.asarray([int(lig_indices[0])], dtype=int), matched_universe=matched)
         if len(matched_rows) != len(scenarios):
             raise AssertionError("Matcher did not return all configurations")
         elements = np.asarray([str(ref.atoms[i].element) for i in ref_water])
