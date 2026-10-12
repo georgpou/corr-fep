@@ -1,0 +1,32 @@
+name: Preserve PR16 numerical JSON
+on:
+  push:
+    branches: ["archive/pr16-water-matching-audit-2026-10-12"]
+    paths: [".github/workflows/archive-pr16-results.yml"]
+permissions:
+  contents: write
+  actions: read
+jobs:
+  preserve:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fetch source artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh run download 38208740661 --repo georgpou/corr-fep --name water-matching-invariance --dir old-results
+          gh run download 38210407853 --repo georgpou/corr-fep --name learned-water-matching --dir learned-results
+      - name: Preserve raw JSON on archive branch
+        run: |
+          set -eu
+          mkdir -p docs/evidence/pr16
+          cp old-results/results/stage-b/water-matching-invariance/water-assignment-invariance.json docs/evidence/pr16/perturbation.json
+          cp learned-results/results/stage-b/learned-water-matching/results.json docs/evidence/pr16/learned-map.json
+          python -c 'import json; a=json.load(open("docs/evidence/pr16/perturbation.json")); b=json.load(open("docs/evidence/pr16/learned-map.json")); assert a["status"]=="complete" and b["status"]=="complete"; assert b["changed_oxygen_frames"]==13 and b["source_preprocess_agree_frames"]==16'
+          sha256sum docs/evidence/pr16/*.json > docs/evidence/pr16/SHA256SUMS
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/evidence/pr16
+          git commit -m "Preserve PR16 measured JSON before artifact expiration"
+          git push origin HEAD:refs/heads/archive/pr16-water-matching-audit-2026-10-12
