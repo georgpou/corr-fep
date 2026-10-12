@@ -2,16 +2,26 @@
 """Verbatim helpers and archived data partitions for author baseline."""
 import importlib.util
 import json
+import os
 from pathlib import Path
 import numpy as np
 import torch
 from stage_b_first_flow_training import check_finite
 
 SEED = 20261011
-TRAIN = np.arange(401, 1051, dtype=int)
+# Opt-in only. The proven historical baseline retains its exact 650-frame split.
+# Disjoint chronological blocks; validation and test frames never enter fitting.
+if os.environ.get("CORR_FEP_EXPANDED_BENCHMARK") == "1":
+    TRAIN = np.concatenate((
+        np.arange(401, 1151, dtype=int),
+        np.arange(1401, 1501, dtype=int),
+        np.arange(1801, 2401, dtype=int)))
+else:
+    TRAIN = np.arange(401, 1051, dtype=int)
 VALIDATION = np.arange(1151, 1401, dtype=int)
 TEST = np.arange(1501, 1801, dtype=int)
-CALIBRATION = np.unique(np.linspace(TRAIN[0], TRAIN[-1], 32, dtype=int))
+# Sample positions *within TRAIN*, never the numerical span of archive indices.
+CALIBRATION = TRAIN[np.unique(np.linspace(0, len(TRAIN) - 1, 32, dtype=int))]
 
 def record(path, value):
     path.write_text(json.dumps(value, indent=2, allow_nan=False) + "\n")
